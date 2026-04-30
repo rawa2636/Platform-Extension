@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Model Orchestrator"
+version = "1.0.0"
+id = "artifacts/orchestrator"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18842
+
+[services.development]
+run = "pnpm --filter @workspace/orchestrator run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/orchestrator", "run", "build" ]
+publicDir = "artifacts/orchestrator/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18842"
+BASE_PATH = "/"

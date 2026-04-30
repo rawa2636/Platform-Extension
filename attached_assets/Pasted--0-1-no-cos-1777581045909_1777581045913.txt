@@ -1,0 +1,318 @@
+فيما يلي المخطط رقم (0) كطبقة تحتية قبل مخططك السابق (الذي يصبح رقم 1). الهدف: استنزاف مستودع no-cost-ai لاكتشاف أفضل النماذج/النهايات (endpoints) يوميًا، تصنيفها، وتغذية طبقة القرار بنماذج سريعة وموثوقة.
+
+
+---
+
+🧩 مخطط (0) — Model Orchestrator & Source Harvester
+
+┌───────────────────────────────┐
+                 │ GitHub Repo (no-cost-ai)      │
+                 │ zebbern/no-cost-ai            │
+                 └───────────────┬───────────────┘
+                                 │  (daily pull)
+                         ┌───────▼────────┐
+                         │ Repo Crawler    │
+                         │ (links/code)    │
+                         └───────┬────────┘
+                                 │
+                         ┌───────▼────────┐
+                         │ Extractor       │
+                         │ (endpoints, SDK)│
+                         └───────┬────────┘
+                                 │
+                         ┌───────▼────────┐
+                         │ Link Tester     │
+                         │ (latency/ok)    │
+                         └───────┬────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │ Model Benchmark Agent   │
+                    │ (speed/quality/cost)    │
+                    └────────────┬────────────┘
+                                 │
+                         ┌───────▼────────┐
+                         │ Ranker          │
+                         │ (top-K ≥ 20)    │
+                         └───────┬────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │ Model Pool (Registry) │
+                     │ Redis + Postgres      │
+                     └───────────┬───────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │ Router (Smart LLM)    │
+                     │ fastest/most stable   │
+                     └───────────┬───────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │  Platform (1)         │
+                     │  Agents & Decisions   │
+                     └───────────────────────┘
+
+
+---
+
+⚙️ المكوّنات الأساسية
+
+1) Repo Crawler
+
+يجلب README/links/SDKs من المستودع يوميًا.
+
+يدعم GitHub API + raw files.
+
+
+2) Extractor
+
+يستخرج:
+
+REST endpoints
+
+مفاتيح demo/SDK
+
+نماذج (OpenAI-like, Ollama, vLLM, HF Inference)
+
+
+
+3) Link Tester (يوميًا – أول ساعة)
+
+اختبار لكل رابط:
+
+HTTP 200
+
+زمن الاستجابة (p95)
+
+حدّ المعدل (rate limit)
+
+
+تصنيف: OK / SLOW / FAIL
+
+
+4) Model Benchmark Agent
+
+يرسل طلبات قياسية قصيرة (prompts ثابتة)
+
+يقيس:
+
+latency
+
+tokens/sec
+
+جودة مختصرة (heuristic/regex/score)
+
+
+يحسب Score موحد
+
+
+5) Ranker (Top-K ≥ 20)
+
+يحتفظ بـ أفضل 20–50 رابط/كود
+
+يزيل الفاشل ويستبدله تلقائيًا
+
+
+6) Model Pool (Registry)
+
+Redis (سريع) + Postgres (تاريخي)
+
+يحتفظ بـ:
+
+endpoint
+
+type (chat/embedding)
+
+score
+
+last_checked
+
+
+
+7) Router (Smart LLM Selector)
+
+يختار:
+
+الأسرع للمهام اللحظية
+
+الأعلى جودة للمهام الحرجة
+
+
+يدعم fallback عند الفشل
+
+
+
+---
+
+🧠 منطق التقييم (Scoring)
+
+score =
+  0.35 * (1 / latency_ms_norm) +
+  0.30 * tokens_per_sec_norm +
+  0.20 * success_rate +
+  0.15 * quality_score
+
+if http_fail:
+    score = 0
+
+
+---
+
+🔁 جدولة يومية (01:00 AM)
+
+daily_job():
+    repo = pull_repo()
+    links = extract(repo)
+
+    results = []
+    for link in links:
+        test = health_check(link)
+        bench = benchmark(link) if test.ok else None
+        results.append(merge(test, bench))
+
+    ranked = sort_by_score(results)
+    top_k = take(ranked, 30)
+
+    save_registry(top_k)
+    archive_failed(results)
+
+
+---
+
+🗂️ نموذج سجل (Registry)
+
+{
+  "id": "model_17",
+  "endpoint": "https://api.example.ai/v1/chat",
+  "type": "chat",
+  "latency_ms": 420,
+  "tps": 38.2,
+  "success_rate": 0.98,
+  "quality": 0.81,
+  "score": 0.86,
+  "last_checked": "2026-04-30T01:12:00Z",
+  "status": "ACTIVE"
+}
+
+
+---
+
+🔀 Router (اختيار النموذج)
+
+select_model(task_type):
+    pool = load_active_models()
+
+    if task_type == "realtime":
+        return argmin(pool, latency_ms)
+
+    if task_type == "analysis":
+        return argmax(pool, score)
+
+    if failure:
+        return next_best(pool)
+
+
+---
+
+🔌 API داخلي
+
+GET /models/active
+GET /models/top?limit=20
+POST /route { task_type: "analysis" }
+POST /health/run-now
+
+
+---
+
+🧱 كود أساسي (مختصر)
+
+Crawler + Extract
+
+import httpx, re
+
+GITHUB_RAW = "https://raw.githubusercontent.com/zebbern/no-cost-ai/main/README.md"
+
+async def fetch_repo():
+    async with httpx.AsyncClient() as c:
+        r = await c.get(GITHUB_RAW, timeout=10)
+        return r.text
+
+def extract_links(md):
+    urls = re.findall(r'https?://[^\s)]+', md)
+    return list(set(urls))
+
+Health Check + Benchmark
+
+import time, httpx
+
+async def health_check(url):
+    t0 = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.get(url)
+        return {"ok": r.status_code==200, "latency": (time.time()-t0)*1000}
+    except:
+        return {"ok": False, "latency": 9999}
+
+async def benchmark(url):
+    # طلب بسيط موحد
+    payload = {"prompt": "ping", "max_tokens": 8}
+    try:
+        t0 = time.time()
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.post(url, json=payload)
+        dt = (time.time()-t0)
+        tokens = 8
+        return {"tps": tokens/max(dt,1e-3), "success": r.status_code==200, "quality": 0.7}
+    except:
+        return {"tps": 0, "success": False, "quality": 0}
+
+Rank + Store
+
+def compute_score(x):
+    if not x["ok"]:
+        return 0
+    lat = x["latency"]
+    tps = x.get("tps",0)
+    succ = 1.0 if x.get("success") else 0.0
+    q = x.get("quality",0)
+
+    return 0.35*(1/max(lat,1)) + 0.30*tps + 0.20*succ + 0.15*q
+
+def rank_all(items):
+    for it in items:
+        it["score"] = compute_score(it)
+    return sorted(items, key=lambda x: x["score"], reverse=True)
+
+
+---
+
+🔐 ملاحظات تشغيلية
+
+بعض الروابط قد تتطلب مفاتيح/API مختلفة → خزّنها بشكل آمن (env).
+
+أضف rate limiter لتجنب الحظر.
+
+اعزل الاختبارات في بيئة sandbox.
+
+احتفظ بتاريخ الأداء لتحسين الاختيار بمرور الوقت.
+
+
+
+---
+
+🔻 النتيجة
+
+≥ 20 نموذج نشط دائمًا (سريع + موثوق)
+
+استبدال تلقائي يومي للروابط الفاشلة
+
+Router ذكي يزوّد مخطط (1) بأفضل LLM لكل مهمة
+
+
+
+---
+
+إذا رغبت، الخطوة التالية:
+
+ربط هذا المخطط مباشرة مع **Fusion Engine** في مخطط (1)
+
+أو إضافة **WebSocket بث حي** لحالة النماذج واختيارها لحظيًا

@@ -3,13 +3,23 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Model Orchestrator & Source Harvester API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: models
+    description: Model registry operations
+  - name: runs
+    description: Harvest run operations
+  - name: harvest
+    description: Harvest pipeline control
+  - name: router
+    description: Smart model selection
+  - name: stats
+    description: Dashboard statistics
 paths:
   /healthz:
     get:
@@ -24,6 +34,235 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /models:
+    get:
+      operationId: listModels
+      tags: [models]
+      summary: List models in the registry
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ACTIVE, SLOW, FAIL, ARCHIVED, ALL]
+            default: ALL
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [chat, embedding, completion, image, audio, unknown, ALL]
+            default: ALL
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [score, latency, tps, lastChecked]
+            default: score
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Models list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelListResponse"
+
+  /models/top:
+    get:
+      operationId: getTopModels
+      tags: [models]
+      summary: Top K models by score
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [chat, embedding, completion, image, audio, unknown, ALL]
+            default: ALL
+      responses:
+        "200":
+          description: Top models
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Model"
+
+  /models/active:
+    get:
+      operationId: getActiveModels
+      tags: [models]
+      summary: All currently active models
+      responses:
+        "200":
+          description: Active models
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Model"
+
+  /models/{id}:
+    get:
+      operationId: getModel
+      tags: [models]
+      summary: Model details with performance history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Model details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /runs:
+    get:
+      operationId: listRuns
+      tags: [runs]
+      summary: Harvest run history
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Runs list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HarvestRun"
+
+  /runs/latest:
+    get:
+      operationId: getLatestRun
+      tags: [runs]
+      summary: Latest harvest run summary
+      responses:
+        "200":
+          description: Latest run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HarvestRun"
+
+  /harvest/run:
+    post:
+      operationId: triggerHarvest
+      tags: [harvest]
+      summary: Manually trigger a harvest cycle
+      responses:
+        "202":
+          description: Accepted, run started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HarvestStartResponse"
+        "409":
+          description: A run is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /harvest/status:
+    get:
+      operationId: getHarvestStatus
+      tags: [harvest]
+      summary: Current harvest pipeline status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HarvestStatus"
+
+  /route:
+    post:
+      operationId: routeRequest
+      tags: [router]
+      summary: Select the best active model for a task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RouteRequest"
+      responses:
+        "200":
+          description: Selected model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RouteResponse"
+        "404":
+          description: No active model available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Dashboard summary statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Stats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +273,301 @@ components:
       required:
         - status
 
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+
+    Model:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+        endpoint:
+          type: string
+        type:
+          type: string
+          enum: [chat, embedding, completion, image, audio, unknown]
+        latencyMs:
+          type: number
+          nullable: true
+        tps:
+          type: number
+          nullable: true
+        successRate:
+          type: number
+          nullable: true
+        quality:
+          type: number
+          nullable: true
+        score:
+          type: number
+        status:
+          type: string
+          enum: [ACTIVE, SLOW, FAIL, ARCHIVED]
+        rank:
+          type: integer
+          nullable: true
+        lastChecked:
+          type: string
+          format: date-time
+          nullable: true
+        sourceUrl:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - id
+        - name
+        - provider
+        - endpoint
+        - type
+        - score
+        - status
+
+    ModelListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Model"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+      required:
+        - items
+        - total
+        - limit
+        - offset
+
+    ModelHistoryPoint:
+      type: object
+      properties:
+        runId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        latencyMs:
+          type: number
+          nullable: true
+        tps:
+          type: number
+          nullable: true
+        score:
+          type: number
+        status:
+          type: string
+      required:
+        - runId
+        - timestamp
+        - score
+        - status
+
+    ModelDetail:
+      allOf:
+        - $ref: "#/components/schemas/Model"
+        - type: object
+          properties:
+            history:
+              type: array
+              items:
+                $ref: "#/components/schemas/ModelHistoryPoint"
+          required:
+            - history
+
+    HarvestRun:
+      type: object
+      properties:
+        id:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: string
+          enum: [RUNNING, SUCCESS, FAILED]
+        sourceCommit:
+          type: string
+          nullable: true
+        linksDiscovered:
+          type: integer
+        linksTested:
+          type: integer
+        modelsActive:
+          type: integer
+        modelsFailed:
+          type: integer
+        avgLatencyMs:
+          type: number
+          nullable: true
+        avgScore:
+          type: number
+          nullable: true
+        durationMs:
+          type: integer
+          nullable: true
+        message:
+          type: string
+          nullable: true
+      required:
+        - id
+        - startedAt
+        - status
+        - linksDiscovered
+        - linksTested
+        - modelsActive
+        - modelsFailed
+
+    HarvestStartResponse:
+      type: object
+      properties:
+        runId:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+      required:
+        - runId
+        - startedAt
+        - message
+
+    HarvestStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        currentRunId:
+          type: string
+          nullable: true
+        stage:
+          type: string
+          nullable: true
+        progress:
+          type: number
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastFinishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        nextScheduledAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - running
+
+    RouteRequest:
+      type: object
+      properties:
+        taskType:
+          type: string
+          enum: [realtime, analysis, balanced, embedding]
+        modelType:
+          type: string
+          enum: [chat, embedding, completion, image, audio, ALL]
+          default: chat
+        excludeIds:
+          type: array
+          items:
+            type: string
+      required:
+        - taskType
+
+    RouteResponse:
+      type: object
+      properties:
+        taskType:
+          type: string
+        selected:
+          $ref: "#/components/schemas/Model"
+        fallbacks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Model"
+        reason:
+          type: string
+      required:
+        - taskType
+        - selected
+        - fallbacks
+        - reason
+
+    Stats:
+      type: object
+      properties:
+        totalModels:
+          type: integer
+        activeModels:
+          type: integer
+        slowModels:
+          type: integer
+        failedModels:
+          type: integer
+        archivedModels:
+          type: integer
+        avgScore:
+          type: number
+          nullable: true
+        avgLatencyMs:
+          type: number
+          nullable: true
+        avgTps:
+          type: number
+          nullable: true
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastRunStatus:
+          type: string
+          nullable: true
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        typeBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+            required:
+              - type
+              - count
+      required:
+        - totalModels
+        - activeModels
+        - slowModels
+        - failedModels
+        - archivedModels
+        - typeBreakdown

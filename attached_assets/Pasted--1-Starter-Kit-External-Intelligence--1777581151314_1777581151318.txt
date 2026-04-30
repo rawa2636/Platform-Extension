@@ -1,0 +1,370 @@
+المخطط 1  فيما يلي حزمة تشغيل أولية (Starter Kit) جاهزة تربط منصتك الحالية كـ External Intelligence وتضيف طبقات: Adapter → Validation → Agents (OrderFlow/Trap/Macro) → Fusion → Risk → Execution، مع API وـ WebSocket. الكود قابل للتشغيل مباشرة.
+
+
+---
+
+1) هيكل المشروع
+
+xau-platform/
+│
+├── app/
+│   ├── main.py
+│   ├── config.py
+│   │
+│   ├── adapters/
+│   │   └── external_platform.py
+│   │
+│   ├── core/
+│   │   ├── validator.py
+│   │   ├── fusion.py
+│   │   ├── risk.py
+│   │   └── execution.py
+│   │
+│   ├── agents/
+│   │   ├── orderflow.py
+│   │   ├── trap.py
+│   │   └── macro.py
+│   │
+│   ├── data/
+│   │   └── models.py
+│   │
+│   └── services/
+│       └── stream.py
+│
+├── requirements.txt
+└── README.md
+
+
+---
+
+2) المتطلبات
+
+fastapi==0.111.0
+uvicorn==0.30.1
+httpx==0.27.0
+pydantic==2.7.1
+redis==5.0.4
+python-dotenv==1.0.1
+
+
+---
+
+3) الإعدادات
+
+# app/config.py
+import os
+
+EXTERNAL_API = os.getenv(
+    "EXTERNAL_API",
+    "https://source-bootstrap--wenat95130.replit.app/"
+)
+
+REQUEST_TIMEOUT = 6.0
+STALE_THRESHOLD_SEC = 5.0
+
+BASE_RISK = 0.01
+DAILY_DRAWDOWN_LIMIT = 0.03
+
+
+---
+
+4) نماذج البيانات
+
+# app/data/models.py
+from pydantic import BaseModel
+from typing import Dict, Any, Optional
+
+class PlatformData(BaseModel):
+    price: float
+    signal: str
+    confidence: float
+    zones: Dict[str, Any] = {}
+    sentiment: Optional[str] = None
+    timestamp: float
+
+class AgentOutput(BaseModel):
+    orderflow: Dict[str, Any]
+    trap: Dict[str, Any]
+    macro: Dict[str, Any]
+
+class Decision(BaseModel):
+    action: str
+    confidence: float
+    reason: list
+    risk: Dict[str, Any]
+
+
+---
+
+5) Adapter (ربط منصتك)
+
+> يفترض وجود endpoint يعيد JSON. إن اختلفت البنية، عدّل الـ parsing فقط.
+
+
+
+# app/adapters/external_platform.py
+import httpx, time
+from app.config import EXTERNAL_API, REQUEST_TIMEOUT
+from app.data.models import PlatformData
+
+async def fetch_platform() -> PlatformData:
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        r = await client.get(EXTERNAL_API)
+        r.raise_for_status()
+        data = r.json()
+
+    # ✱ عدّل المفاتيح حسب شكل API لديك
+    price = float(data.get("price", data.get("spot", 0)))
+    signal = data.get("signal", data.get("live_signal", "WAIT"))
+    confidence = float(data.get("confidence", data.get("score", 0)))
+    zones = data.get("zones", data.get("liquidity_zones", {}))
+    sentiment = data.get("sentiment", data.get("market_intent", None))
+
+    return PlatformData(
+        price=price,
+        signal=signal,
+        confidence=confidence,
+        zones=zones,
+        sentiment=sentiment,
+        timestamp=time.time()
+    )
+
+
+---
+
+6) Validation
+
+# app/core/validator.py
+import time
+from app.config import STALE_THRESHOLD_SEC
+
+def validate(p):
+    penalty = 0.0
+    flags = []
+
+    if (time.time() - p.timestamp) > STALE_THRESHOLD_SEC:
+        penalty += 0.2
+        flags.append("stale_data")
+
+    if p.price <= 0:
+        penalty += 0.5
+        flags.append("invalid_price")
+
+    return penalty, flags
+
+
+---
+
+7) Agents
+
+OrderFlow (بدون مزود عمق حقيقي → proxy)
+
+# app/agents/orderflow.py
+def run_orderflow(p):
+    # Proxy بسيط يعتمد على الزخم/الإشارة
+    delta = 1 if p.signal == "BUY" else -1 if p.signal == "SELL" else 0
+    imbalance = "buyers" if delta > 0 else "sellers" if delta < 0 else "neutral"
+    absorption = False  # يتطلب بيانات عمق حقيقية
+
+    return {
+        "delta": delta,
+        "imbalance": imbalance,
+        "absorption": absorption,
+        "score": 0.6 if imbalance != "neutral" else 0.5
+    }
+
+Trap Engine
+
+# app/agents/trap.py
+def run_trap(p):
+    trap_score = 0.0
+    reasons = []
+
+    # مثال: ثقة عالية + غياب محفزات واضحة => خطر فخ
+    if p.confidence > 0.9 and (p.sentiment in [None, "neutral"]):
+        trap_score = 0.4
+        reasons.append("high_conf_no_catalyst")
+
+    # قرب السعر من حدود سيولة عليا/دنيا (إن توفرت)
+    # zones = {"R1":..., "S1":...}
+    if p.zones:
+        # منطق تقريبي
+        if "R1" in p.zones and abs(p.price - float(p.zones["R1"])) < 5:
+            trap_score += 0.2
+            reasons.append("near_resistance")
+
+    return {
+        "trap_score": min(trap_score, 1.0),
+        "reasons": reasons
+    }
+
+Macro
+
+# app/agents/macro.py
+def run_macro(p):
+    # placeholder (اربط DXY/Yields/VIX عند توفرها)
+    macro_score = 0.5
+    bias = "neutral"
+
+    if p.sentiment == "bullish":
+        macro_score = 0.6
+        bias = "supportive"
+
+    return {
+        "macro_score": macro_score,
+        "bias": bias
+    }
+
+
+---
+
+8) Fusion (دمج القرار)
+
+# app/core/fusion.py
+def fuse(p, orderflow, trap, macro, penalty):
+    w1, w2, w3, w4 = 0.4, 0.25, 0.2, 0.15
+
+    base = p.confidence
+    of = orderflow["score"]
+    ma = macro["macro_score"]
+    tr = trap["trap_score"]
+
+    confidence = (w1*base + w2*of + w3*ma - w4*tr) - penalty
+    confidence = max(0.0, min(1.0, confidence))
+
+    if confidence > 0.7:
+        action = "BUY" if p.signal == "BUY" else "SELL" if p.signal == "SELL" else "WAIT"
+    elif confidence < 0.4:
+        action = "WAIT"
+    else:
+        action = "WAIT"
+
+    reason = [
+        f"base:{base:.2f}",
+        f"orderflow:{of:.2f}",
+        f"macro:{ma:.2f}",
+        f"trap:{tr:.2f}",
+        f"penalty:{penalty:.2f}"
+    ]
+
+    return action, confidence, reason
+
+
+---
+
+9) Risk Manager
+
+# app/core/risk.py
+from app.config import BASE_RISK, DAILY_DRAWDOWN_LIMIT
+
+_state = {
+    "drawdown_today": 0.0
+}
+
+def compute_risk(confidence, trap_score):
+    if _state["drawdown_today"] > DAILY_DRAWDOWN_LIMIT:
+        return {"allow": False, "position_size": 0.0, "reason": "daily_limit"}
+
+    risk = BASE_RISK * confidence * (1 - trap_score)
+    risk = max(0.0, min(risk, BASE_RISK))
+
+    return {"allow": True, "position_size": risk}
+
+
+---
+
+10) Execution (محاكاة)
+
+# app/core/execution.py
+def execute(action, risk, price):
+    if not risk["allow"] or action == "WAIT":
+        return {"status": "NO_TRADE"}
+
+    # محاكاة
+    return {
+        "status": "EXECUTED",
+        "action": action,
+        "entry": price,
+        "size": risk["position_size"]
+    }
+
+
+---
+
+11) الخدمة (API + Pipeline)
+
+# app/main.py
+from fastapi import FastAPI
+from app.adapters.external_platform import fetch_platform
+from app.core.validator import validate
+from app.agents.orderflow import run_orderflow
+from app.agents.trap import run_trap
+from app.agents.macro import run_macro
+from app.core.fusion import fuse
+from app.core.risk import compute_risk
+from app.core.execution import execute
+
+app = FastAPI()
+
+@app.get("/decision")
+async def decision():
+    p = await fetch_platform()
+
+    penalty, flags = validate(p)
+
+    of = run_orderflow(p)
+    tr = run_trap(p)
+    ma = run_macro(p)
+
+    action, conf, reason = fuse(p, of, tr, ma, penalty)
+
+    risk = compute_risk(conf, tr["trap_score"])
+    exec_result = execute(action, risk, p.price)
+
+    return {
+        "price": p.price,
+        "platform_signal": p.signal,
+        "final_action": action,
+        "confidence": conf,
+        "reason": reason + flags,
+        "agents": {
+            "orderflow": of,
+            "trap": tr,
+            "macro": ma
+        },
+        "risk": risk,
+        "execution": exec_result
+    }
+
+
+---
+
+12) تشغيل
+
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+افتح:
+
+http://localhost:8000/decision
+
+
+---
+
+13) تحسينات مباشرة (خطوتك التالية)
+
+ربط Order Book حقيقي (مزود Depth) واستبدال proxy
+
+إضافة WebSocket بث لحظي
+
+تخزين Redis لآخر Features
+
+Backtesting على بيانات تاريخية
+
+قواعد Exit متقدمة (partial TP / trailing)
+
+
+
+---
+
+هذه الحزمة تمثل طبقة تكملة عملية فوق منصتك الحالية دون إعادة بناء ما هو موجود، وتتركز على: كشف الفخاخ، دمج القرار، وإدارة المخاطر والتنفيذ.
