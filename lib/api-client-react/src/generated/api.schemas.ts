@@ -168,6 +168,304 @@ export interface Stats {
   typeBreakdown: StatsTypeBreakdownItem[];
 }
 
+export interface ErrorBody {
+  error: string;
+}
+
+export interface ResetAccountBody {
+  /** @minimum 1 */
+  startingBalance?: number;
+}
+
+export interface TraderAccount {
+  balance: number;
+  equity: number;
+  startingBalance: number;
+  realizedPnl: number;
+  unrealizedPnl: number;
+  peakEquity: number;
+  currentDrawdownPct: number;
+  dailyPnl: number;
+  dailyPnlResetAt: string;
+  openPositions: number;
+  tradesToday: number;
+  totalTrades: number;
+  winRate?: number | null;
+  updatedAt: string;
+}
+
+export type TraderSettingsExecutionMode =
+  (typeof TraderSettingsExecutionMode)[keyof typeof TraderSettingsExecutionMode];
+
+export const TraderSettingsExecutionMode = {
+  OFF: "OFF",
+  MANUAL: "MANUAL",
+  AUTO: "AUTO",
+} as const;
+
+export type TraderSettingsTradingMode =
+  (typeof TraderSettingsTradingMode)[keyof typeof TraderSettingsTradingMode];
+
+export const TraderSettingsTradingMode = {
+  DAILY: "DAILY",
+  MID: "MID",
+} as const;
+
+export interface TraderSettings {
+  executionMode: TraderSettingsExecutionMode;
+  tradingMode: TraderSettingsTradingMode;
+  /**
+   * @minimum 0.05
+   * @maximum 5
+   */
+  riskPerTradePct: number;
+  /**
+   * @minimum 0.5
+   * @maximum 20
+   */
+  dailyLossCapPct: number;
+  /**
+   * @minimum 1
+   * @maximum 10
+   */
+  maxOpenPositions: number;
+  /**
+   * @minimum 1
+   * @maximum 50
+   */
+  maxTradesPerDay: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  minConfidence: number;
+  /**
+   * @minimum 0.5
+   * @maximum 5
+   */
+  minRiskReward: number;
+  requireAiConfirmation: boolean;
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  aiConfirmCount: number;
+  /**
+   * @minimum 30
+   * @maximum 3600
+   */
+  signalExpirySec: number;
+  updatedAt: string;
+}
+
+export type UpdateTraderSettingsRequestExecutionMode =
+  (typeof UpdateTraderSettingsRequestExecutionMode)[keyof typeof UpdateTraderSettingsRequestExecutionMode];
+
+export const UpdateTraderSettingsRequestExecutionMode = {
+  OFF: "OFF",
+  MANUAL: "MANUAL",
+  AUTO: "AUTO",
+} as const;
+
+export type UpdateTraderSettingsRequestTradingMode =
+  (typeof UpdateTraderSettingsRequestTradingMode)[keyof typeof UpdateTraderSettingsRequestTradingMode];
+
+export const UpdateTraderSettingsRequestTradingMode = {
+  DAILY: "DAILY",
+  MID: "MID",
+} as const;
+
+export interface UpdateTraderSettingsRequest {
+  executionMode?: UpdateTraderSettingsRequestExecutionMode;
+  tradingMode?: UpdateTraderSettingsRequestTradingMode;
+  riskPerTradePct?: number;
+  dailyLossCapPct?: number;
+  maxOpenPositions?: number;
+  maxTradesPerDay?: number;
+  minConfidence?: number;
+  minRiskReward?: number;
+  requireAiConfirmation?: boolean;
+  aiConfirmCount?: number;
+  signalExpirySec?: number;
+}
+
+export interface RejectSignalRequest {
+  reason?: string;
+}
+
+export type TraderSnapshotSignalDirection =
+  (typeof TraderSnapshotSignalDirection)[keyof typeof TraderSnapshotSignalDirection];
+
+export const TraderSnapshotSignalDirection = {
+  BUY: "BUY",
+  SELL: "SELL",
+  NEUTRAL: "NEUTRAL",
+} as const;
+
+export type TraderSnapshotMacroSummary = { [key: string]: unknown };
+
+export interface TraderSnapshot {
+  fetchedAt: string;
+  sourceStatus: string;
+  symbol: string;
+  spot: number;
+  atrPct?: number | null;
+  atrAbs?: number | null;
+  signalDirection: TraderSnapshotSignalDirection;
+  signalConfidence: number;
+  signalScore: number;
+  signalEntry?: number | null;
+  signalStopLoss?: number | null;
+  signalTakeProfits: number[];
+  signalRiskReward?: number | null;
+  timingState?: string | null;
+  timingPressure?: number | null;
+  macroSummary?: TraderSnapshotMacroSummary;
+  cotTilt?: string | null;
+  newsHighImpactCount: number;
+  drivers: string[];
+}
+
+export type TraderSignalDirection =
+  (typeof TraderSignalDirection)[keyof typeof TraderSignalDirection];
+
+export const TraderSignalDirection = {
+  BUY: "BUY",
+  SELL: "SELL",
+} as const;
+
+export type TraderSignalStatus =
+  (typeof TraderSignalStatus)[keyof typeof TraderSignalStatus];
+
+export const TraderSignalStatus = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  EXECUTED: "EXECUTED",
+  EXPIRED: "EXPIRED",
+} as const;
+
+export interface TraderSignal {
+  id: string;
+  createdAt: string;
+  tradingMode: string;
+  executionMode: string;
+  direction: TraderSignalDirection;
+  confidence: number;
+  sourceScore: number;
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  riskReward: number;
+  atrAbs: number;
+  sizeUnits: number;
+  riskAmount: number;
+  rulesPassed: boolean;
+  aiPassed?: boolean | null;
+  aiVotersCount: number;
+  aiAgreeCount: number;
+  status: TraderSignalStatus;
+  rejectionReason?: string | null;
+  positionId?: string | null;
+}
+
+export interface GateDecision {
+  gate: string;
+  passed: boolean;
+  reason: string;
+  value?: number | null;
+  threshold?: number | null;
+}
+
+export type AiVoteDirection =
+  (typeof AiVoteDirection)[keyof typeof AiVoteDirection];
+
+export const AiVoteDirection = {
+  BUY: "BUY",
+  SELL: "SELL",
+  NEUTRAL: "NEUTRAL",
+  ABSTAIN: "ABSTAIN",
+} as const;
+
+export interface AiVote {
+  modelId: string;
+  modelName: string;
+  direction: AiVoteDirection;
+  rationale?: string | null;
+  latencyMs?: number | null;
+  agreed: boolean;
+}
+
+export type TraderSignalDetail = TraderSignal & {
+  snapshot: TraderSnapshot;
+  gates: GateDecision[];
+  aiVotes: AiVote[];
+};
+
+export type TraderPositionSide =
+  (typeof TraderPositionSide)[keyof typeof TraderPositionSide];
+
+export const TraderPositionSide = {
+  BUY: "BUY",
+  SELL: "SELL",
+} as const;
+
+export type TraderPositionStatus =
+  (typeof TraderPositionStatus)[keyof typeof TraderPositionStatus];
+
+export const TraderPositionStatus = {
+  OPEN: "OPEN",
+  CLOSED: "CLOSED",
+} as const;
+
+export interface TraderPosition {
+  id: string;
+  signalId: string;
+  side: TraderPositionSide;
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  sizeUnits: number;
+  riskAmount: number;
+  openedAt: string;
+  closedAt?: string | null;
+  exitPrice?: number | null;
+  exitReason?: string | null;
+  pnl?: number | null;
+  pnlR?: number | null;
+  status: TraderPositionStatus;
+  currentPrice?: number | null;
+  unrealizedPnl?: number | null;
+}
+
+export interface CycleRunResult {
+  ranAt: string;
+  ok: boolean;
+  signalCreated: boolean;
+  signalId?: string | null;
+  signalStatus?: string | null;
+  rejectionReason?: string | null;
+  positionsClosed: number;
+  gates: GateDecision[];
+}
+
+export type TraderDashboardEquityCurveItem = {
+  t: string;
+  equity: number;
+};
+
+export interface TraderDashboard {
+  account: TraderAccount;
+  settings: TraderSettings;
+  snapshot?: TraderSnapshot;
+  openPositions: TraderPosition[];
+  recentSignals: TraderSignal[];
+  lastCycleAt?: string | null;
+  nextCycleAt?: string | null;
+  cycleRunning: boolean;
+  equityCurve: TraderDashboardEquityCurveItem[];
+}
+
 export type ListModelsParams = {
   status?: ListModelsStatus;
   type?: ListModelsType;
@@ -246,3 +544,42 @@ export type ListRunsParams = {
    */
   limit?: number;
 };
+
+export type ListTraderSignalsParams = {
+  status?: ListTraderSignalsStatus;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListTraderSignalsStatus =
+  (typeof ListTraderSignalsStatus)[keyof typeof ListTraderSignalsStatus];
+
+export const ListTraderSignalsStatus = {
+  PENDING: "PENDING",
+  APPROVED: "APPROVED",
+  REJECTED: "REJECTED",
+  EXECUTED: "EXECUTED",
+  EXPIRED: "EXPIRED",
+  ALL: "ALL",
+} as const;
+
+export type ListTraderPositionsParams = {
+  status?: ListTraderPositionsStatus;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListTraderPositionsStatus =
+  (typeof ListTraderPositionsStatus)[keyof typeof ListTraderPositionsStatus];
+
+export const ListTraderPositionsStatus = {
+  OPEN: "OPEN",
+  CLOSED: "CLOSED",
+  ALL: "ALL",
+} as const;

@@ -370,3 +370,716 @@ export const GetStatsResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * @summary Paper trading account state
+ */
+export const GetTraderAccountResponse = zod.object({
+  balance: zod.number(),
+  equity: zod.number(),
+  startingBalance: zod.number(),
+  realizedPnl: zod.number(),
+  unrealizedPnl: zod.number(),
+  peakEquity: zod.number(),
+  currentDrawdownPct: zod.number(),
+  dailyPnl: zod.number(),
+  dailyPnlResetAt: zod.coerce.date(),
+  openPositions: zod.number(),
+  tradesToday: zod.number(),
+  totalTrades: zod.number(),
+  winRate: zod.number().nullish(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Reset paper account to a starting balance
+ */
+export const resetTraderAccountBodyStartingBalanceDefault = 100000;
+
+export const ResetTraderAccountBody = zod.object({
+  startingBalance: zod
+    .number()
+    .min(1)
+    .default(resetTraderAccountBodyStartingBalanceDefault),
+});
+
+export const ResetTraderAccountResponse = zod.object({
+  balance: zod.number(),
+  equity: zod.number(),
+  startingBalance: zod.number(),
+  realizedPnl: zod.number(),
+  unrealizedPnl: zod.number(),
+  peakEquity: zod.number(),
+  currentDrawdownPct: zod.number(),
+  dailyPnl: zod.number(),
+  dailyPnlResetAt: zod.coerce.date(),
+  openPositions: zod.number(),
+  tradesToday: zod.number(),
+  totalTrades: zod.number(),
+  winRate: zod.number().nullish(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Trader settings (risk profile, mode, execution)
+ */
+export const getTraderSettingsResponseRiskPerTradePctMin = 0.05;
+export const getTraderSettingsResponseRiskPerTradePctMax = 5;
+
+export const getTraderSettingsResponseDailyLossCapPctMin = 0.5;
+export const getTraderSettingsResponseDailyLossCapPctMax = 20;
+
+export const getTraderSettingsResponseMaxOpenPositionsMax = 10;
+
+export const getTraderSettingsResponseMaxTradesPerDayMax = 50;
+
+export const getTraderSettingsResponseMinConfidenceMin = 0;
+export const getTraderSettingsResponseMinConfidenceMax = 1;
+
+export const getTraderSettingsResponseMinRiskRewardMin = 0.5;
+export const getTraderSettingsResponseMinRiskRewardMax = 5;
+
+export const getTraderSettingsResponseAiConfirmCountMax = 5;
+
+export const getTraderSettingsResponseSignalExpirySecMin = 30;
+export const getTraderSettingsResponseSignalExpirySecMax = 3600;
+
+export const GetTraderSettingsResponse = zod.object({
+  executionMode: zod.enum(["OFF", "MANUAL", "AUTO"]),
+  tradingMode: zod.enum(["DAILY", "MID"]),
+  riskPerTradePct: zod
+    .number()
+    .min(getTraderSettingsResponseRiskPerTradePctMin)
+    .max(getTraderSettingsResponseRiskPerTradePctMax),
+  dailyLossCapPct: zod
+    .number()
+    .min(getTraderSettingsResponseDailyLossCapPctMin)
+    .max(getTraderSettingsResponseDailyLossCapPctMax),
+  maxOpenPositions: zod
+    .number()
+    .min(1)
+    .max(getTraderSettingsResponseMaxOpenPositionsMax),
+  maxTradesPerDay: zod
+    .number()
+    .min(1)
+    .max(getTraderSettingsResponseMaxTradesPerDayMax),
+  minConfidence: zod
+    .number()
+    .min(getTraderSettingsResponseMinConfidenceMin)
+    .max(getTraderSettingsResponseMinConfidenceMax),
+  minRiskReward: zod
+    .number()
+    .min(getTraderSettingsResponseMinRiskRewardMin)
+    .max(getTraderSettingsResponseMinRiskRewardMax),
+  requireAiConfirmation: zod.boolean(),
+  aiConfirmCount: zod
+    .number()
+    .min(1)
+    .max(getTraderSettingsResponseAiConfirmCountMax),
+  signalExpirySec: zod
+    .number()
+    .min(getTraderSettingsResponseSignalExpirySecMin)
+    .max(getTraderSettingsResponseSignalExpirySecMax),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update trader settings
+ */
+export const UpdateTraderSettingsBody = zod.object({
+  executionMode: zod.enum(["OFF", "MANUAL", "AUTO"]).optional(),
+  tradingMode: zod.enum(["DAILY", "MID"]).optional(),
+  riskPerTradePct: zod.number().optional(),
+  dailyLossCapPct: zod.number().optional(),
+  maxOpenPositions: zod.number().optional(),
+  maxTradesPerDay: zod.number().optional(),
+  minConfidence: zod.number().optional(),
+  minRiskReward: zod.number().optional(),
+  requireAiConfirmation: zod.boolean().optional(),
+  aiConfirmCount: zod.number().optional(),
+  signalExpirySec: zod.number().optional(),
+});
+
+export const updateTraderSettingsResponseRiskPerTradePctMin = 0.05;
+export const updateTraderSettingsResponseRiskPerTradePctMax = 5;
+
+export const updateTraderSettingsResponseDailyLossCapPctMin = 0.5;
+export const updateTraderSettingsResponseDailyLossCapPctMax = 20;
+
+export const updateTraderSettingsResponseMaxOpenPositionsMax = 10;
+
+export const updateTraderSettingsResponseMaxTradesPerDayMax = 50;
+
+export const updateTraderSettingsResponseMinConfidenceMin = 0;
+export const updateTraderSettingsResponseMinConfidenceMax = 1;
+
+export const updateTraderSettingsResponseMinRiskRewardMin = 0.5;
+export const updateTraderSettingsResponseMinRiskRewardMax = 5;
+
+export const updateTraderSettingsResponseAiConfirmCountMax = 5;
+
+export const updateTraderSettingsResponseSignalExpirySecMin = 30;
+export const updateTraderSettingsResponseSignalExpirySecMax = 3600;
+
+export const UpdateTraderSettingsResponse = zod.object({
+  executionMode: zod.enum(["OFF", "MANUAL", "AUTO"]),
+  tradingMode: zod.enum(["DAILY", "MID"]),
+  riskPerTradePct: zod
+    .number()
+    .min(updateTraderSettingsResponseRiskPerTradePctMin)
+    .max(updateTraderSettingsResponseRiskPerTradePctMax),
+  dailyLossCapPct: zod
+    .number()
+    .min(updateTraderSettingsResponseDailyLossCapPctMin)
+    .max(updateTraderSettingsResponseDailyLossCapPctMax),
+  maxOpenPositions: zod
+    .number()
+    .min(1)
+    .max(updateTraderSettingsResponseMaxOpenPositionsMax),
+  maxTradesPerDay: zod
+    .number()
+    .min(1)
+    .max(updateTraderSettingsResponseMaxTradesPerDayMax),
+  minConfidence: zod
+    .number()
+    .min(updateTraderSettingsResponseMinConfidenceMin)
+    .max(updateTraderSettingsResponseMinConfidenceMax),
+  minRiskReward: zod
+    .number()
+    .min(updateTraderSettingsResponseMinRiskRewardMin)
+    .max(updateTraderSettingsResponseMinRiskRewardMax),
+  requireAiConfirmation: zod.boolean(),
+  aiConfirmCount: zod
+    .number()
+    .min(1)
+    .max(updateTraderSettingsResponseAiConfirmCountMax),
+  signalExpirySec: zod
+    .number()
+    .min(updateTraderSettingsResponseSignalExpirySecMin)
+    .max(updateTraderSettingsResponseSignalExpirySecMax),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Current XAU/USD market snapshot from source
+ */
+export const GetTraderSnapshotResponse = zod.object({
+  fetchedAt: zod.coerce.date(),
+  sourceStatus: zod.string(),
+  symbol: zod.string(),
+  spot: zod.number(),
+  atrPct: zod.number().nullish(),
+  atrAbs: zod.number().nullish(),
+  signalDirection: zod.enum(["BUY", "SELL", "NEUTRAL"]),
+  signalConfidence: zod.number(),
+  signalScore: zod.number(),
+  signalEntry: zod.number().nullish(),
+  signalStopLoss: zod.number().nullish(),
+  signalTakeProfits: zod.array(zod.number()),
+  signalRiskReward: zod.number().nullish(),
+  timingState: zod.string().nullish(),
+  timingPressure: zod.number().nullish(),
+  macroSummary: zod.record(zod.string(), zod.unknown()).optional(),
+  cotTilt: zod.string().nullish(),
+  newsHighImpactCount: zod.number(),
+  drivers: zod.array(zod.string()),
+});
+
+/**
+ * @summary List signals (most recent first)
+ */
+export const listTraderSignalsQueryStatusDefault = `ALL`;
+export const listTraderSignalsQueryLimitDefault = 50;
+export const listTraderSignalsQueryLimitMax = 200;
+
+export const ListTraderSignalsQueryParams = zod.object({
+  status: zod
+    .enum(["PENDING", "APPROVED", "REJECTED", "EXECUTED", "EXPIRED", "ALL"])
+    .default(listTraderSignalsQueryStatusDefault),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listTraderSignalsQueryLimitMax)
+    .default(listTraderSignalsQueryLimitDefault),
+});
+
+export const ListTraderSignalsResponseItem = zod.object({
+  id: zod.string(),
+  createdAt: zod.coerce.date(),
+  tradingMode: zod.string(),
+  executionMode: zod.string(),
+  direction: zod.enum(["BUY", "SELL"]),
+  confidence: zod.number(),
+  sourceScore: zod.number(),
+  entry: zod.number(),
+  stopLoss: zod.number(),
+  takeProfit: zod.number(),
+  riskReward: zod.number(),
+  atrAbs: zod.number(),
+  sizeUnits: zod.number(),
+  riskAmount: zod.number(),
+  rulesPassed: zod.boolean(),
+  aiPassed: zod.boolean().nullish(),
+  aiVotersCount: zod.number(),
+  aiAgreeCount: zod.number(),
+  status: zod.enum(["PENDING", "APPROVED", "REJECTED", "EXECUTED", "EXPIRED"]),
+  rejectionReason: zod.string().nullish(),
+  positionId: zod.string().nullish(),
+});
+export const ListTraderSignalsResponse = zod.array(
+  ListTraderSignalsResponseItem,
+);
+
+/**
+ * @summary Signal with full audit trail
+ */
+export const GetTraderSignalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetTraderSignalResponse = zod
+  .object({
+    id: zod.string(),
+    createdAt: zod.coerce.date(),
+    tradingMode: zod.string(),
+    executionMode: zod.string(),
+    direction: zod.enum(["BUY", "SELL"]),
+    confidence: zod.number(),
+    sourceScore: zod.number(),
+    entry: zod.number(),
+    stopLoss: zod.number(),
+    takeProfit: zod.number(),
+    riskReward: zod.number(),
+    atrAbs: zod.number(),
+    sizeUnits: zod.number(),
+    riskAmount: zod.number(),
+    rulesPassed: zod.boolean(),
+    aiPassed: zod.boolean().nullish(),
+    aiVotersCount: zod.number(),
+    aiAgreeCount: zod.number(),
+    status: zod.enum([
+      "PENDING",
+      "APPROVED",
+      "REJECTED",
+      "EXECUTED",
+      "EXPIRED",
+    ]),
+    rejectionReason: zod.string().nullish(),
+    positionId: zod.string().nullish(),
+  })
+  .and(
+    zod.object({
+      snapshot: zod.object({
+        fetchedAt: zod.coerce.date(),
+        sourceStatus: zod.string(),
+        symbol: zod.string(),
+        spot: zod.number(),
+        atrPct: zod.number().nullish(),
+        atrAbs: zod.number().nullish(),
+        signalDirection: zod.enum(["BUY", "SELL", "NEUTRAL"]),
+        signalConfidence: zod.number(),
+        signalScore: zod.number(),
+        signalEntry: zod.number().nullish(),
+        signalStopLoss: zod.number().nullish(),
+        signalTakeProfits: zod.array(zod.number()),
+        signalRiskReward: zod.number().nullish(),
+        timingState: zod.string().nullish(),
+        timingPressure: zod.number().nullish(),
+        macroSummary: zod.record(zod.string(), zod.unknown()).optional(),
+        cotTilt: zod.string().nullish(),
+        newsHighImpactCount: zod.number(),
+        drivers: zod.array(zod.string()),
+      }),
+      gates: zod.array(
+        zod.object({
+          gate: zod.string(),
+          passed: zod.boolean(),
+          reason: zod.string(),
+          value: zod.number().nullish(),
+          threshold: zod.number().nullish(),
+        }),
+      ),
+      aiVotes: zod.array(
+        zod.object({
+          modelId: zod.string(),
+          modelName: zod.string(),
+          direction: zod.enum(["BUY", "SELL", "NEUTRAL", "ABSTAIN"]),
+          rationale: zod.string().nullish(),
+          latencyMs: zod.number().nullish(),
+          agreed: zod.boolean(),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * @summary Approve a pending signal (manual mode)
+ */
+export const ApproveTraderSignalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const ApproveTraderSignalResponse = zod
+  .object({
+    id: zod.string(),
+    createdAt: zod.coerce.date(),
+    tradingMode: zod.string(),
+    executionMode: zod.string(),
+    direction: zod.enum(["BUY", "SELL"]),
+    confidence: zod.number(),
+    sourceScore: zod.number(),
+    entry: zod.number(),
+    stopLoss: zod.number(),
+    takeProfit: zod.number(),
+    riskReward: zod.number(),
+    atrAbs: zod.number(),
+    sizeUnits: zod.number(),
+    riskAmount: zod.number(),
+    rulesPassed: zod.boolean(),
+    aiPassed: zod.boolean().nullish(),
+    aiVotersCount: zod.number(),
+    aiAgreeCount: zod.number(),
+    status: zod.enum([
+      "PENDING",
+      "APPROVED",
+      "REJECTED",
+      "EXECUTED",
+      "EXPIRED",
+    ]),
+    rejectionReason: zod.string().nullish(),
+    positionId: zod.string().nullish(),
+  })
+  .and(
+    zod.object({
+      snapshot: zod.object({
+        fetchedAt: zod.coerce.date(),
+        sourceStatus: zod.string(),
+        symbol: zod.string(),
+        spot: zod.number(),
+        atrPct: zod.number().nullish(),
+        atrAbs: zod.number().nullish(),
+        signalDirection: zod.enum(["BUY", "SELL", "NEUTRAL"]),
+        signalConfidence: zod.number(),
+        signalScore: zod.number(),
+        signalEntry: zod.number().nullish(),
+        signalStopLoss: zod.number().nullish(),
+        signalTakeProfits: zod.array(zod.number()),
+        signalRiskReward: zod.number().nullish(),
+        timingState: zod.string().nullish(),
+        timingPressure: zod.number().nullish(),
+        macroSummary: zod.record(zod.string(), zod.unknown()).optional(),
+        cotTilt: zod.string().nullish(),
+        newsHighImpactCount: zod.number(),
+        drivers: zod.array(zod.string()),
+      }),
+      gates: zod.array(
+        zod.object({
+          gate: zod.string(),
+          passed: zod.boolean(),
+          reason: zod.string(),
+          value: zod.number().nullish(),
+          threshold: zod.number().nullish(),
+        }),
+      ),
+      aiVotes: zod.array(
+        zod.object({
+          modelId: zod.string(),
+          modelName: zod.string(),
+          direction: zod.enum(["BUY", "SELL", "NEUTRAL", "ABSTAIN"]),
+          rationale: zod.string().nullish(),
+          latencyMs: zod.number().nullish(),
+          agreed: zod.boolean(),
+        }),
+      ),
+    }),
+  );
+
+/**
+ * @summary Reject a pending signal
+ */
+export const RejectTraderSignalParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RejectTraderSignalBody = zod.object({
+  reason: zod.string().optional(),
+});
+
+export const RejectTraderSignalResponse = zod.object({
+  id: zod.string(),
+  createdAt: zod.coerce.date(),
+  tradingMode: zod.string(),
+  executionMode: zod.string(),
+  direction: zod.enum(["BUY", "SELL"]),
+  confidence: zod.number(),
+  sourceScore: zod.number(),
+  entry: zod.number(),
+  stopLoss: zod.number(),
+  takeProfit: zod.number(),
+  riskReward: zod.number(),
+  atrAbs: zod.number(),
+  sizeUnits: zod.number(),
+  riskAmount: zod.number(),
+  rulesPassed: zod.boolean(),
+  aiPassed: zod.boolean().nullish(),
+  aiVotersCount: zod.number(),
+  aiAgreeCount: zod.number(),
+  status: zod.enum(["PENDING", "APPROVED", "REJECTED", "EXECUTED", "EXPIRED"]),
+  rejectionReason: zod.string().nullish(),
+  positionId: zod.string().nullish(),
+});
+
+/**
+ * @summary Open and closed paper positions
+ */
+export const listTraderPositionsQueryStatusDefault = `ALL`;
+export const listTraderPositionsQueryLimitDefault = 50;
+export const listTraderPositionsQueryLimitMax = 200;
+
+export const ListTraderPositionsQueryParams = zod.object({
+  status: zod
+    .enum(["OPEN", "CLOSED", "ALL"])
+    .default(listTraderPositionsQueryStatusDefault),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listTraderPositionsQueryLimitMax)
+    .default(listTraderPositionsQueryLimitDefault),
+});
+
+export const ListTraderPositionsResponseItem = zod.object({
+  id: zod.string(),
+  signalId: zod.string(),
+  side: zod.enum(["BUY", "SELL"]),
+  entry: zod.number(),
+  stopLoss: zod.number(),
+  takeProfit: zod.number(),
+  sizeUnits: zod.number(),
+  riskAmount: zod.number(),
+  openedAt: zod.coerce.date(),
+  closedAt: zod.coerce.date().nullish(),
+  exitPrice: zod.number().nullish(),
+  exitReason: zod.string().nullish(),
+  pnl: zod.number().nullish(),
+  pnlR: zod.number().nullish(),
+  status: zod.enum(["OPEN", "CLOSED"]),
+  currentPrice: zod.number().nullish(),
+  unrealizedPnl: zod.number().nullish(),
+});
+export const ListTraderPositionsResponse = zod.array(
+  ListTraderPositionsResponseItem,
+);
+
+/**
+ * @summary Manually close an open position at current market price
+ */
+export const CloseTraderPositionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const CloseTraderPositionResponse = zod.object({
+  id: zod.string(),
+  signalId: zod.string(),
+  side: zod.enum(["BUY", "SELL"]),
+  entry: zod.number(),
+  stopLoss: zod.number(),
+  takeProfit: zod.number(),
+  sizeUnits: zod.number(),
+  riskAmount: zod.number(),
+  openedAt: zod.coerce.date(),
+  closedAt: zod.coerce.date().nullish(),
+  exitPrice: zod.number().nullish(),
+  exitReason: zod.string().nullish(),
+  pnl: zod.number().nullish(),
+  pnlR: zod.number().nullish(),
+  status: zod.enum(["OPEN", "CLOSED"]),
+  currentPrice: zod.number().nullish(),
+  unrealizedPnl: zod.number().nullish(),
+});
+
+/**
+ * @summary Manually trigger one decision cycle now
+ */
+export const RunTraderCycleResponse = zod.object({
+  ranAt: zod.coerce.date(),
+  ok: zod.boolean(),
+  signalCreated: zod.boolean(),
+  signalId: zod.string().nullish(),
+  signalStatus: zod.string().nullish(),
+  rejectionReason: zod.string().nullish(),
+  positionsClosed: zod.number(),
+  gates: zod.array(
+    zod.object({
+      gate: zod.string(),
+      passed: zod.boolean(),
+      reason: zod.string(),
+      value: zod.number().nullish(),
+      threshold: zod.number().nullish(),
+    }),
+  ),
+});
+
+/**
+ * @summary Aggregated dashboard payload (account + open positions + recent signals + last cycle)
+ */
+export const getTraderDashboardResponseSettingsRiskPerTradePctMin = 0.05;
+export const getTraderDashboardResponseSettingsRiskPerTradePctMax = 5;
+
+export const getTraderDashboardResponseSettingsDailyLossCapPctMin = 0.5;
+export const getTraderDashboardResponseSettingsDailyLossCapPctMax = 20;
+
+export const getTraderDashboardResponseSettingsMaxOpenPositionsMax = 10;
+
+export const getTraderDashboardResponseSettingsMaxTradesPerDayMax = 50;
+
+export const getTraderDashboardResponseSettingsMinConfidenceMin = 0;
+export const getTraderDashboardResponseSettingsMinConfidenceMax = 1;
+
+export const getTraderDashboardResponseSettingsMinRiskRewardMin = 0.5;
+export const getTraderDashboardResponseSettingsMinRiskRewardMax = 5;
+
+export const getTraderDashboardResponseSettingsAiConfirmCountMax = 5;
+
+export const getTraderDashboardResponseSettingsSignalExpirySecMin = 30;
+export const getTraderDashboardResponseSettingsSignalExpirySecMax = 3600;
+
+export const GetTraderDashboardResponse = zod.object({
+  account: zod.object({
+    balance: zod.number(),
+    equity: zod.number(),
+    startingBalance: zod.number(),
+    realizedPnl: zod.number(),
+    unrealizedPnl: zod.number(),
+    peakEquity: zod.number(),
+    currentDrawdownPct: zod.number(),
+    dailyPnl: zod.number(),
+    dailyPnlResetAt: zod.coerce.date(),
+    openPositions: zod.number(),
+    tradesToday: zod.number(),
+    totalTrades: zod.number(),
+    winRate: zod.number().nullish(),
+    updatedAt: zod.coerce.date(),
+  }),
+  settings: zod.object({
+    executionMode: zod.enum(["OFF", "MANUAL", "AUTO"]),
+    tradingMode: zod.enum(["DAILY", "MID"]),
+    riskPerTradePct: zod
+      .number()
+      .min(getTraderDashboardResponseSettingsRiskPerTradePctMin)
+      .max(getTraderDashboardResponseSettingsRiskPerTradePctMax),
+    dailyLossCapPct: zod
+      .number()
+      .min(getTraderDashboardResponseSettingsDailyLossCapPctMin)
+      .max(getTraderDashboardResponseSettingsDailyLossCapPctMax),
+    maxOpenPositions: zod
+      .number()
+      .min(1)
+      .max(getTraderDashboardResponseSettingsMaxOpenPositionsMax),
+    maxTradesPerDay: zod
+      .number()
+      .min(1)
+      .max(getTraderDashboardResponseSettingsMaxTradesPerDayMax),
+    minConfidence: zod
+      .number()
+      .min(getTraderDashboardResponseSettingsMinConfidenceMin)
+      .max(getTraderDashboardResponseSettingsMinConfidenceMax),
+    minRiskReward: zod
+      .number()
+      .min(getTraderDashboardResponseSettingsMinRiskRewardMin)
+      .max(getTraderDashboardResponseSettingsMinRiskRewardMax),
+    requireAiConfirmation: zod.boolean(),
+    aiConfirmCount: zod
+      .number()
+      .min(1)
+      .max(getTraderDashboardResponseSettingsAiConfirmCountMax),
+    signalExpirySec: zod
+      .number()
+      .min(getTraderDashboardResponseSettingsSignalExpirySecMin)
+      .max(getTraderDashboardResponseSettingsSignalExpirySecMax),
+    updatedAt: zod.coerce.date(),
+  }),
+  snapshot: zod
+    .object({
+      fetchedAt: zod.coerce.date(),
+      sourceStatus: zod.string(),
+      symbol: zod.string(),
+      spot: zod.number(),
+      atrPct: zod.number().nullish(),
+      atrAbs: zod.number().nullish(),
+      signalDirection: zod.enum(["BUY", "SELL", "NEUTRAL"]),
+      signalConfidence: zod.number(),
+      signalScore: zod.number(),
+      signalEntry: zod.number().nullish(),
+      signalStopLoss: zod.number().nullish(),
+      signalTakeProfits: zod.array(zod.number()),
+      signalRiskReward: zod.number().nullish(),
+      timingState: zod.string().nullish(),
+      timingPressure: zod.number().nullish(),
+      macroSummary: zod.record(zod.string(), zod.unknown()).optional(),
+      cotTilt: zod.string().nullish(),
+      newsHighImpactCount: zod.number(),
+      drivers: zod.array(zod.string()),
+    })
+    .optional(),
+  openPositions: zod.array(
+    zod.object({
+      id: zod.string(),
+      signalId: zod.string(),
+      side: zod.enum(["BUY", "SELL"]),
+      entry: zod.number(),
+      stopLoss: zod.number(),
+      takeProfit: zod.number(),
+      sizeUnits: zod.number(),
+      riskAmount: zod.number(),
+      openedAt: zod.coerce.date(),
+      closedAt: zod.coerce.date().nullish(),
+      exitPrice: zod.number().nullish(),
+      exitReason: zod.string().nullish(),
+      pnl: zod.number().nullish(),
+      pnlR: zod.number().nullish(),
+      status: zod.enum(["OPEN", "CLOSED"]),
+      currentPrice: zod.number().nullish(),
+      unrealizedPnl: zod.number().nullish(),
+    }),
+  ),
+  recentSignals: zod.array(
+    zod.object({
+      id: zod.string(),
+      createdAt: zod.coerce.date(),
+      tradingMode: zod.string(),
+      executionMode: zod.string(),
+      direction: zod.enum(["BUY", "SELL"]),
+      confidence: zod.number(),
+      sourceScore: zod.number(),
+      entry: zod.number(),
+      stopLoss: zod.number(),
+      takeProfit: zod.number(),
+      riskReward: zod.number(),
+      atrAbs: zod.number(),
+      sizeUnits: zod.number(),
+      riskAmount: zod.number(),
+      rulesPassed: zod.boolean(),
+      aiPassed: zod.boolean().nullish(),
+      aiVotersCount: zod.number(),
+      aiAgreeCount: zod.number(),
+      status: zod.enum([
+        "PENDING",
+        "APPROVED",
+        "REJECTED",
+        "EXECUTED",
+        "EXPIRED",
+      ]),
+      rejectionReason: zod.string().nullish(),
+      positionId: zod.string().nullish(),
+    }),
+  ),
+  lastCycleAt: zod.coerce.date().nullish(),
+  nextCycleAt: zod.coerce.date().nullish(),
+  cycleRunning: zod.boolean(),
+  equityCurve: zod.array(
+    zod.object({
+      t: zod.coerce.date(),
+      equity: zod.number(),
+    }),
+  ),
+});

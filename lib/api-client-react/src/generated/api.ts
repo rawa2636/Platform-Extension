@@ -17,7 +17,9 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  CycleRunResult,
   Error,
+  ErrorBody,
   GetTopModelsParams,
   HarvestRun,
   HarvestStartResponse,
@@ -25,12 +27,24 @@ import type {
   HealthStatus,
   ListModelsParams,
   ListRunsParams,
+  ListTraderPositionsParams,
+  ListTraderSignalsParams,
   Model,
   ModelDetail,
   ModelListResponse,
+  RejectSignalRequest,
+  ResetAccountBody,
   RouteRequest,
   RouteResponse,
   Stats,
+  TraderAccount,
+  TraderDashboard,
+  TraderPosition,
+  TraderSettings,
+  TraderSignal,
+  TraderSignalDetail,
+  TraderSnapshot,
+  UpdateTraderSettingsRequest,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -934,6 +948,1099 @@ export function useGetStats<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStatsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Paper trading account state
+ */
+export const getGetTraderAccountUrl = () => {
+  return `/api/trader/account`;
+};
+
+export const getTraderAccount = async (
+  options?: RequestInit,
+): Promise<TraderAccount> => {
+  return customFetch<TraderAccount>(getGetTraderAccountUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderAccountQueryKey = () => {
+  return [`/api/trader/account`] as const;
+};
+
+export const getGetTraderAccountQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderAccount>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderAccount>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderAccountQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTraderAccount>>
+  > = ({ signal }) => getTraderAccount({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderAccount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderAccountQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderAccount>>
+>;
+export type GetTraderAccountQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Paper trading account state
+ */
+
+export function useGetTraderAccount<
+  TData = Awaited<ReturnType<typeof getTraderAccount>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderAccount>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderAccountQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Reset paper account to a starting balance
+ */
+export const getResetTraderAccountUrl = () => {
+  return `/api/trader/account/reset`;
+};
+
+export const resetTraderAccount = async (
+  resetAccountBody: ResetAccountBody,
+  options?: RequestInit,
+): Promise<TraderAccount> => {
+  return customFetch<TraderAccount>(getResetTraderAccountUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(resetAccountBody),
+  });
+};
+
+export const getResetTraderAccountMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetTraderAccount>>,
+    TError,
+    { data: BodyType<ResetAccountBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof resetTraderAccount>>,
+  TError,
+  { data: BodyType<ResetAccountBody> },
+  TContext
+> => {
+  const mutationKey = ["resetTraderAccount"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof resetTraderAccount>>,
+    { data: BodyType<ResetAccountBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return resetTraderAccount(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ResetTraderAccountMutationResult = NonNullable<
+  Awaited<ReturnType<typeof resetTraderAccount>>
+>;
+export type ResetTraderAccountMutationBody = BodyType<ResetAccountBody>;
+export type ResetTraderAccountMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reset paper account to a starting balance
+ */
+export const useResetTraderAccount = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof resetTraderAccount>>,
+    TError,
+    { data: BodyType<ResetAccountBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof resetTraderAccount>>,
+  TError,
+  { data: BodyType<ResetAccountBody> },
+  TContext
+> => {
+  return useMutation(getResetTraderAccountMutationOptions(options));
+};
+
+/**
+ * @summary Trader settings (risk profile, mode, execution)
+ */
+export const getGetTraderSettingsUrl = () => {
+  return `/api/trader/settings`;
+};
+
+export const getTraderSettings = async (
+  options?: RequestInit,
+): Promise<TraderSettings> => {
+  return customFetch<TraderSettings>(getGetTraderSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderSettingsQueryKey = () => {
+  return [`/api/trader/settings`] as const;
+};
+
+export const getGetTraderSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderSettingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTraderSettings>>
+  > = ({ signal }) => getTraderSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderSettings>>
+>;
+export type GetTraderSettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Trader settings (risk profile, mode, execution)
+ */
+
+export function useGetTraderSettings<
+  TData = Awaited<ReturnType<typeof getTraderSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update trader settings
+ */
+export const getUpdateTraderSettingsUrl = () => {
+  return `/api/trader/settings`;
+};
+
+export const updateTraderSettings = async (
+  updateTraderSettingsRequest: UpdateTraderSettingsRequest,
+  options?: RequestInit,
+): Promise<TraderSettings> => {
+  return customFetch<TraderSettings>(getUpdateTraderSettingsUrl(), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateTraderSettingsRequest),
+  });
+};
+
+export const getUpdateTraderSettingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTraderSettings>>,
+    TError,
+    { data: BodyType<UpdateTraderSettingsRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTraderSettings>>,
+  TError,
+  { data: BodyType<UpdateTraderSettingsRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateTraderSettings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTraderSettings>>,
+    { data: BodyType<UpdateTraderSettingsRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateTraderSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTraderSettingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTraderSettings>>
+>;
+export type UpdateTraderSettingsMutationBody =
+  BodyType<UpdateTraderSettingsRequest>;
+export type UpdateTraderSettingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update trader settings
+ */
+export const useUpdateTraderSettings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTraderSettings>>,
+    TError,
+    { data: BodyType<UpdateTraderSettingsRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTraderSettings>>,
+  TError,
+  { data: BodyType<UpdateTraderSettingsRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateTraderSettingsMutationOptions(options));
+};
+
+/**
+ * @summary Current XAU/USD market snapshot from source
+ */
+export const getGetTraderSnapshotUrl = () => {
+  return `/api/trader/snapshot`;
+};
+
+export const getTraderSnapshot = async (
+  options?: RequestInit,
+): Promise<TraderSnapshot> => {
+  return customFetch<TraderSnapshot>(getGetTraderSnapshotUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderSnapshotQueryKey = () => {
+  return [`/api/trader/snapshot`] as const;
+};
+
+export const getGetTraderSnapshotQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderSnapshot>>,
+  TError = ErrorType<ErrorBody>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSnapshot>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderSnapshotQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTraderSnapshot>>
+  > = ({ signal }) => getTraderSnapshot({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSnapshot>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderSnapshotQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderSnapshot>>
+>;
+export type GetTraderSnapshotQueryError = ErrorType<ErrorBody>;
+
+/**
+ * @summary Current XAU/USD market snapshot from source
+ */
+
+export function useGetTraderSnapshot<
+  TData = Awaited<ReturnType<typeof getTraderSnapshot>>,
+  TError = ErrorType<ErrorBody>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSnapshot>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderSnapshotQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List signals (most recent first)
+ */
+export const getListTraderSignalsUrl = (params?: ListTraderSignalsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/trader/signals?${stringifiedParams}`
+    : `/api/trader/signals`;
+};
+
+export const listTraderSignals = async (
+  params?: ListTraderSignalsParams,
+  options?: RequestInit,
+): Promise<TraderSignal[]> => {
+  return customFetch<TraderSignal[]>(getListTraderSignalsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTraderSignalsQueryKey = (
+  params?: ListTraderSignalsParams,
+) => {
+  return [`/api/trader/signals`, ...(params ? [params] : [])] as const;
+};
+
+export const getListTraderSignalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTraderSignals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTraderSignalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTraderSignals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListTraderSignalsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTraderSignals>>
+  > = ({ signal }) => listTraderSignals(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTraderSignals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTraderSignalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTraderSignals>>
+>;
+export type ListTraderSignalsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List signals (most recent first)
+ */
+
+export function useListTraderSignals<
+  TData = Awaited<ReturnType<typeof listTraderSignals>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTraderSignalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTraderSignals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTraderSignalsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Signal with full audit trail
+ */
+export const getGetTraderSignalUrl = (id: string) => {
+  return `/api/trader/signals/${id}`;
+};
+
+export const getTraderSignal = async (
+  id: string,
+  options?: RequestInit,
+): Promise<TraderSignalDetail> => {
+  return customFetch<TraderSignalDetail>(getGetTraderSignalUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderSignalQueryKey = (id: string) => {
+  return [`/api/trader/signals/${id}`] as const;
+};
+
+export const getGetTraderSignalQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderSignal>>,
+  TError = ErrorType<ErrorBody>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTraderSignal>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderSignalQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTraderSignal>>> = ({
+    signal,
+  }) => getTraderSignal(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSignal>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderSignalQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderSignal>>
+>;
+export type GetTraderSignalQueryError = ErrorType<ErrorBody>;
+
+/**
+ * @summary Signal with full audit trail
+ */
+
+export function useGetTraderSignal<
+  TData = Awaited<ReturnType<typeof getTraderSignal>>,
+  TError = ErrorType<ErrorBody>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTraderSignal>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderSignalQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Approve a pending signal (manual mode)
+ */
+export const getApproveTraderSignalUrl = (id: string) => {
+  return `/api/trader/signals/${id}/approve`;
+};
+
+export const approveTraderSignal = async (
+  id: string,
+  options?: RequestInit,
+): Promise<TraderSignalDetail> => {
+  return customFetch<TraderSignalDetail>(getApproveTraderSignalUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getApproveTraderSignalMutationOptions = <
+  TError = ErrorType<ErrorBody>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveTraderSignal>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveTraderSignal>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["approveTraderSignal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveTraderSignal>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return approveTraderSignal(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveTraderSignalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveTraderSignal>>
+>;
+
+export type ApproveTraderSignalMutationError = ErrorType<ErrorBody>;
+
+/**
+ * @summary Approve a pending signal (manual mode)
+ */
+export const useApproveTraderSignal = <
+  TError = ErrorType<ErrorBody>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveTraderSignal>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveTraderSignal>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getApproveTraderSignalMutationOptions(options));
+};
+
+/**
+ * @summary Reject a pending signal
+ */
+export const getRejectTraderSignalUrl = (id: string) => {
+  return `/api/trader/signals/${id}/reject`;
+};
+
+export const rejectTraderSignal = async (
+  id: string,
+  rejectSignalRequest?: RejectSignalRequest,
+  options?: RequestInit,
+): Promise<TraderSignal> => {
+  return customFetch<TraderSignal>(getRejectTraderSignalUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rejectSignalRequest),
+  });
+};
+
+export const getRejectTraderSignalMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectTraderSignal>>,
+    TError,
+    { id: string; data: BodyType<RejectSignalRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectTraderSignal>>,
+  TError,
+  { id: string; data: BodyType<RejectSignalRequest> },
+  TContext
+> => {
+  const mutationKey = ["rejectTraderSignal"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectTraderSignal>>,
+    { id: string; data: BodyType<RejectSignalRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return rejectTraderSignal(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectTraderSignalMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectTraderSignal>>
+>;
+export type RejectTraderSignalMutationBody = BodyType<RejectSignalRequest>;
+export type RejectTraderSignalMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reject a pending signal
+ */
+export const useRejectTraderSignal = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectTraderSignal>>,
+    TError,
+    { id: string; data: BodyType<RejectSignalRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectTraderSignal>>,
+  TError,
+  { id: string; data: BodyType<RejectSignalRequest> },
+  TContext
+> => {
+  return useMutation(getRejectTraderSignalMutationOptions(options));
+};
+
+/**
+ * @summary Open and closed paper positions
+ */
+export const getListTraderPositionsUrl = (
+  params?: ListTraderPositionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/trader/positions?${stringifiedParams}`
+    : `/api/trader/positions`;
+};
+
+export const listTraderPositions = async (
+  params?: ListTraderPositionsParams,
+  options?: RequestInit,
+): Promise<TraderPosition[]> => {
+  return customFetch<TraderPosition[]>(getListTraderPositionsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTraderPositionsQueryKey = (
+  params?: ListTraderPositionsParams,
+) => {
+  return [`/api/trader/positions`, ...(params ? [params] : [])] as const;
+};
+
+export const getListTraderPositionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTraderPositions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTraderPositionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTraderPositions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListTraderPositionsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTraderPositions>>
+  > = ({ signal }) =>
+    listTraderPositions(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTraderPositions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTraderPositionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTraderPositions>>
+>;
+export type ListTraderPositionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Open and closed paper positions
+ */
+
+export function useListTraderPositions<
+  TData = Awaited<ReturnType<typeof listTraderPositions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTraderPositionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTraderPositions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTraderPositionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Manually close an open position at current market price
+ */
+export const getCloseTraderPositionUrl = (id: string) => {
+  return `/api/trader/positions/${id}/close`;
+};
+
+export const closeTraderPosition = async (
+  id: string,
+  options?: RequestInit,
+): Promise<TraderPosition> => {
+  return customFetch<TraderPosition>(getCloseTraderPositionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getCloseTraderPositionMutationOptions = <
+  TError = ErrorType<ErrorBody>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof closeTraderPosition>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof closeTraderPosition>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["closeTraderPosition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof closeTraderPosition>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return closeTraderPosition(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CloseTraderPositionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof closeTraderPosition>>
+>;
+
+export type CloseTraderPositionMutationError = ErrorType<ErrorBody>;
+
+/**
+ * @summary Manually close an open position at current market price
+ */
+export const useCloseTraderPosition = <
+  TError = ErrorType<ErrorBody>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof closeTraderPosition>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof closeTraderPosition>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getCloseTraderPositionMutationOptions(options));
+};
+
+/**
+ * @summary Manually trigger one decision cycle now
+ */
+export const getRunTraderCycleUrl = () => {
+  return `/api/trader/cycle/run`;
+};
+
+export const runTraderCycle = async (
+  options?: RequestInit,
+): Promise<CycleRunResult> => {
+  return customFetch<CycleRunResult>(getRunTraderCycleUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunTraderCycleMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runTraderCycle>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runTraderCycle>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runTraderCycle"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runTraderCycle>>,
+    void
+  > = () => {
+    return runTraderCycle(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunTraderCycleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runTraderCycle>>
+>;
+
+export type RunTraderCycleMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Manually trigger one decision cycle now
+ */
+export const useRunTraderCycle = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runTraderCycle>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runTraderCycle>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunTraderCycleMutationOptions(options));
+};
+
+/**
+ * @summary Aggregated dashboard payload (account + open positions + recent signals + last cycle)
+ */
+export const getGetTraderDashboardUrl = () => {
+  return `/api/trader/dashboard`;
+};
+
+export const getTraderDashboard = async (
+  options?: RequestInit,
+): Promise<TraderDashboard> => {
+  return customFetch<TraderDashboard>(getGetTraderDashboardUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderDashboardQueryKey = () => {
+  return [`/api/trader/dashboard`] as const;
+};
+
+export const getGetTraderDashboardQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderDashboard>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderDashboard>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderDashboardQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTraderDashboard>>
+  > = ({ signal }) => getTraderDashboard({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderDashboard>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderDashboardQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderDashboard>>
+>;
+export type GetTraderDashboardQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Aggregated dashboard payload (account + open positions + recent signals + last cycle)
+ */
+
+export function useGetTraderDashboard<
+  TData = Awaited<ReturnType<typeof getTraderDashboard>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderDashboard>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderDashboardQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

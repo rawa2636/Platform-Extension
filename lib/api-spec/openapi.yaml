@@ -20,6 +20,18 @@ tags:
     description: Smart model selection
   - name: stats
     description: Dashboard statistics
+  - name: trader-account
+    description: Paper trading account state
+  - name: trader-settings
+    description: Trader configuration and risk profile
+  - name: trader-snapshot
+    description: Live market snapshot from data source
+  - name: trader-signals
+    description: Trading signal generation, audit, approval
+  - name: trader-positions
+    description: Open and closed paper positions
+  - name: trader-cycle
+    description: Trader decision cycle control
 paths:
   /healthz:
     get:
@@ -262,6 +274,276 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Stats"
+
+
+  /trader/account:
+    get:
+      operationId: getTraderAccount
+      tags: [trader-account]
+      summary: Paper trading account state
+      responses:
+        "200":
+          description: Account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderAccount"
+
+  /trader/account/reset:
+    post:
+      operationId: resetTraderAccount
+      tags: [trader-account]
+      summary: Reset paper account to a starting balance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetAccountBody"
+      responses:
+        "200":
+          description: Reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderAccount"
+
+  /trader/settings:
+    get:
+      operationId: getTraderSettings
+      tags: [trader-settings]
+      summary: Trader settings (risk profile, mode, execution)
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderSettings"
+    patch:
+      operationId: updateTraderSettings
+      tags: [trader-settings]
+      summary: Update trader settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTraderSettingsRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderSettings"
+
+  /trader/snapshot:
+    get:
+      operationId: getTraderSnapshot
+      tags: [trader-snapshot]
+      summary: Current XAU/USD market snapshot from source
+      responses:
+        "200":
+          description: Snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderSnapshot"
+        "503":
+          description: Data source unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /trader/signals:
+    get:
+      operationId: listTraderSignals
+      tags: [trader-signals]
+      summary: List signals (most recent first)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED, EXECUTED, EXPIRED, ALL]
+            default: ALL
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TraderSignal"
+
+  /trader/signals/{id}:
+    get:
+      operationId: getTraderSignal
+      tags: [trader-signals]
+      summary: Signal with full audit trail
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderSignalDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /trader/signals/{id}/approve:
+    post:
+      operationId: approveTraderSignal
+      tags: [trader-signals]
+      summary: Approve a pending signal (manual mode)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approved and executed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderSignalDetail"
+        "409":
+          description: Cannot approve in current state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /trader/signals/{id}/reject:
+    post:
+      operationId: rejectTraderSignal
+      tags: [trader-signals]
+      summary: Reject a pending signal
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectSignalRequest"
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderSignal"
+
+  /trader/positions:
+    get:
+      operationId: listTraderPositions
+      tags: [trader-positions]
+      summary: Open and closed paper positions
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [OPEN, CLOSED, ALL]
+            default: ALL
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TraderPosition"
+
+  /trader/positions/{id}/close:
+    post:
+      operationId: closeTraderPosition
+      tags: [trader-positions]
+      summary: Manually close an open position at current market price
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderPosition"
+        "409":
+          description: Position not open
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /trader/cycle/run:
+    post:
+      operationId: runTraderCycle
+      tags: [trader-cycle]
+      summary: Manually trigger one decision cycle now
+      responses:
+        "200":
+          description: Cycle ran
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CycleRunResult"
+
+  /trader/dashboard:
+    get:
+      operationId: getTraderDashboard
+      tags: [trader-account]
+      summary: Aggregated dashboard payload (account + open positions + recent signals + last cycle)
+      responses:
+        "200":
+          description: Dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraderDashboard"
 
 components:
   schemas:
@@ -571,3 +853,487 @@ components:
         - failedModels
         - archivedModels
         - typeBreakdown
+    ErrorBody:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    ResetAccountBody:
+      type: object
+      properties:
+        startingBalance:
+          type: number
+          minimum: 1
+          default: 100000
+      required: []
+
+    TraderAccount:
+      type: object
+      properties:
+        balance:
+          type: number
+        equity:
+          type: number
+        startingBalance:
+          type: number
+        realizedPnl:
+          type: number
+        unrealizedPnl:
+          type: number
+        peakEquity:
+          type: number
+        currentDrawdownPct:
+          type: number
+        dailyPnl:
+          type: number
+        dailyPnlResetAt:
+          type: string
+          format: date-time
+        openPositions:
+          type: integer
+        tradesToday:
+          type: integer
+        totalTrades:
+          type: integer
+        winRate:
+          type: number
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - balance
+        - equity
+        - startingBalance
+        - realizedPnl
+        - unrealizedPnl
+        - peakEquity
+        - currentDrawdownPct
+        - dailyPnl
+        - dailyPnlResetAt
+        - openPositions
+        - tradesToday
+        - totalTrades
+        - updatedAt
+
+    TraderSettings:
+      type: object
+      properties:
+        executionMode:
+          type: string
+          enum: [OFF, MANUAL, AUTO]
+        tradingMode:
+          type: string
+          enum: [DAILY, MID]
+        riskPerTradePct:
+          type: number
+          minimum: 0.05
+          maximum: 5
+        dailyLossCapPct:
+          type: number
+          minimum: 0.5
+          maximum: 20
+        maxOpenPositions:
+          type: integer
+          minimum: 1
+          maximum: 10
+        maxTradesPerDay:
+          type: integer
+          minimum: 1
+          maximum: 50
+        minConfidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        minRiskReward:
+          type: number
+          minimum: 0.5
+          maximum: 5
+        requireAiConfirmation:
+          type: boolean
+        aiConfirmCount:
+          type: integer
+          minimum: 1
+          maximum: 5
+        signalExpirySec:
+          type: integer
+          minimum: 30
+          maximum: 3600
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - executionMode
+        - tradingMode
+        - riskPerTradePct
+        - dailyLossCapPct
+        - maxOpenPositions
+        - maxTradesPerDay
+        - minConfidence
+        - minRiskReward
+        - requireAiConfirmation
+        - aiConfirmCount
+        - signalExpirySec
+        - updatedAt
+
+    UpdateTraderSettingsRequest:
+      type: object
+      properties:
+        executionMode:
+          type: string
+          enum: [OFF, MANUAL, AUTO]
+        tradingMode:
+          type: string
+          enum: [DAILY, MID]
+        riskPerTradePct:
+          type: number
+        dailyLossCapPct:
+          type: number
+        maxOpenPositions:
+          type: integer
+        maxTradesPerDay:
+          type: integer
+        minConfidence:
+          type: number
+        minRiskReward:
+          type: number
+        requireAiConfirmation:
+          type: boolean
+        aiConfirmCount:
+          type: integer
+        signalExpirySec:
+          type: integer
+
+    RejectSignalRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+
+    TraderSnapshot:
+      type: object
+      properties:
+        fetchedAt:
+          type: string
+          format: date-time
+        sourceStatus:
+          type: string
+        symbol:
+          type: string
+        spot:
+          type: number
+        atrPct:
+          type: number
+          nullable: true
+        atrAbs:
+          type: number
+          nullable: true
+        signalDirection:
+          type: string
+          enum: [BUY, SELL, NEUTRAL]
+        signalConfidence:
+          type: number
+        signalScore:
+          type: number
+        signalEntry:
+          type: number
+          nullable: true
+        signalStopLoss:
+          type: number
+          nullable: true
+        signalTakeProfits:
+          type: array
+          items:
+            type: number
+        signalRiskReward:
+          type: number
+          nullable: true
+        timingState:
+          type: string
+          nullable: true
+        timingPressure:
+          type: number
+          nullable: true
+        macroSummary:
+          type: object
+          additionalProperties: true
+        cotTilt:
+          type: string
+          nullable: true
+        newsHighImpactCount:
+          type: integer
+        drivers:
+          type: array
+          items:
+            type: string
+      required:
+        - fetchedAt
+        - sourceStatus
+        - symbol
+        - spot
+        - signalDirection
+        - signalConfidence
+        - signalScore
+        - signalTakeProfits
+        - newsHighImpactCount
+        - drivers
+
+    TraderSignal:
+      type: object
+      properties:
+        id:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        tradingMode:
+          type: string
+        executionMode:
+          type: string
+        direction:
+          type: string
+          enum: [BUY, SELL]
+        confidence:
+          type: number
+        sourceScore:
+          type: number
+        entry:
+          type: number
+        stopLoss:
+          type: number
+        takeProfit:
+          type: number
+        riskReward:
+          type: number
+        atrAbs:
+          type: number
+        sizeUnits:
+          type: number
+        riskAmount:
+          type: number
+        rulesPassed:
+          type: boolean
+        aiPassed:
+          type: boolean
+          nullable: true
+        aiVotersCount:
+          type: integer
+        aiAgreeCount:
+          type: integer
+        status:
+          type: string
+          enum: [PENDING, APPROVED, REJECTED, EXECUTED, EXPIRED]
+        rejectionReason:
+          type: string
+          nullable: true
+        positionId:
+          type: string
+          nullable: true
+      required:
+        - id
+        - createdAt
+        - tradingMode
+        - executionMode
+        - direction
+        - confidence
+        - sourceScore
+        - entry
+        - stopLoss
+        - takeProfit
+        - riskReward
+        - atrAbs
+        - sizeUnits
+        - riskAmount
+        - rulesPassed
+        - aiVotersCount
+        - aiAgreeCount
+        - status
+
+    GateDecision:
+      type: object
+      properties:
+        gate:
+          type: string
+        passed:
+          type: boolean
+        reason:
+          type: string
+        value:
+          type: number
+          nullable: true
+        threshold:
+          type: number
+          nullable: true
+      required: [gate, passed, reason]
+
+    AiVote:
+      type: object
+      properties:
+        modelId:
+          type: string
+        modelName:
+          type: string
+        direction:
+          type: string
+          enum: [BUY, SELL, NEUTRAL, ABSTAIN]
+        rationale:
+          type: string
+          nullable: true
+        latencyMs:
+          type: number
+          nullable: true
+        agreed:
+          type: boolean
+      required: [modelId, modelName, direction, agreed]
+
+    TraderSignalDetail:
+      allOf:
+        - $ref: "#/components/schemas/TraderSignal"
+        - type: object
+          properties:
+            snapshot:
+              $ref: "#/components/schemas/TraderSnapshot"
+            gates:
+              type: array
+              items:
+                $ref: "#/components/schemas/GateDecision"
+            aiVotes:
+              type: array
+              items:
+                $ref: "#/components/schemas/AiVote"
+          required: [snapshot, gates, aiVotes]
+
+    TraderPosition:
+      type: object
+      properties:
+        id:
+          type: string
+        signalId:
+          type: string
+        side:
+          type: string
+          enum: [BUY, SELL]
+        entry:
+          type: number
+        stopLoss:
+          type: number
+        takeProfit:
+          type: number
+        sizeUnits:
+          type: number
+        riskAmount:
+          type: number
+        openedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+        exitPrice:
+          type: number
+          nullable: true
+        exitReason:
+          type: string
+          nullable: true
+        pnl:
+          type: number
+          nullable: true
+        pnlR:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum: [OPEN, CLOSED]
+        currentPrice:
+          type: number
+          nullable: true
+        unrealizedPnl:
+          type: number
+          nullable: true
+      required:
+        - id
+        - signalId
+        - side
+        - entry
+        - stopLoss
+        - takeProfit
+        - sizeUnits
+        - riskAmount
+        - openedAt
+        - status
+
+    CycleRunResult:
+      type: object
+      properties:
+        ranAt:
+          type: string
+          format: date-time
+        ok:
+          type: boolean
+        signalCreated:
+          type: boolean
+        signalId:
+          type: string
+          nullable: true
+        signalStatus:
+          type: string
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+        positionsClosed:
+          type: integer
+        gates:
+          type: array
+          items:
+            $ref: "#/components/schemas/GateDecision"
+      required: [ranAt, ok, signalCreated, positionsClosed, gates]
+
+    TraderDashboard:
+      type: object
+      properties:
+        account:
+          $ref: "#/components/schemas/TraderAccount"
+        settings:
+          $ref: "#/components/schemas/TraderSettings"
+        snapshot:
+          $ref: "#/components/schemas/TraderSnapshot"
+        openPositions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraderPosition"
+        recentSignals:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraderSignal"
+        lastCycleAt:
+          type: string
+          format: date-time
+          nullable: true
+        nextCycleAt:
+          type: string
+          format: date-time
+          nullable: true
+        cycleRunning:
+          type: boolean
+        equityCurve:
+          type: array
+          items:
+            type: object
+            properties:
+              t:
+                type: string
+                format: date-time
+              equity:
+                type: number
+            required: [t, equity]
+      required:
+        - account
+        - settings
+        - openPositions
+        - recentSignals
+        - cycleRunning
+        - equityCurve
