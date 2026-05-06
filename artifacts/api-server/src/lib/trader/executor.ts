@@ -9,7 +9,7 @@ import {
 import { logger } from "../logger.js";
 import { fetchAndPersistSnapshot } from "./datasource.js";
 import { evaluateRules } from "./rules.js";
-import { aiConfirm } from "./ai-confirm.js";
+import { runConsensus } from "./consensus.js";
 import { computePositionSize } from "./sizing.js";
 import {
   checkOpenPositionsForExit,
@@ -21,6 +21,7 @@ import {
   rolloverDailyIfNeeded,
 } from "./account.js";
 import type { GateDecision, AiVote } from "./types.js";
+import type { ConsensusVerdict, GuardedAgent } from "./agents/types.js";
 
 const SINGLETON = "singleton";
 
@@ -33,6 +34,7 @@ export interface CycleResult {
   rejectionReason: string | null;
   positionsClosed: number;
   gates: GateDecision[];
+  consensus?: ConsensusVerdict;
 }
 
 export async function ensureCycleStateRow(): Promise<void> {
@@ -69,59 +71,62 @@ async function recordCycleError(message: string): Promise<void> {
     .where(eq(traderCycleStateTable.id, SINGLETON));
 }
 
-async function persistRejectedSignal(
-  data: {
-    settings: Awaited<ReturnType<typeof getSettings>>;
-    snapshotId: string;
-    direction: string;
-    confidence: number;
-    score: number;
-    entry: number;
-    stopLoss: number;
-    takeProfit: number;
-    riskReward: number;
-    atrAbs: number;
-    sizeUnits: number;
-    riskAmount: number;
-    rulesPassed: boolean;
-    aiPassed: boolean | null;
-    aiVotersCount: number;
-    aiAgreeCount: number;
-    rejectionReason: string;
-    gates: GateDecision[];
-    aiVotes: AiVote[];
-  },
-): Promise<string> {
-  const id = randomUUID();
-  const now = new Date();
-  await db.insert(traderSignalsTable).values({
-    id,
-    createdAt: now,
-    tradingMode: data.settings.tradingMode,
-    executionMode: data.settings.executionMode,
-    direction: data.direction,
-    confidence: data.confidence,
-    sourceScore: data.score,
-    entry: data.entry,
-    stopLoss: data.stopLoss,
-    takeProfit: data.takeProfit,
-    riskReward: data.riskReward,
-    atrAbs: data.atrAbs,
-    sizeUnits: data.sizeUnits,
-    riskAmount: data.riskAmount,
-    rulesPassed: data.rulesPassed,
-    aiPassed: data.aiPassed,
-    aiVotersCount: data.aiVotersCount,
-    aiAgreeCount: data.aiAgreeCount,
-    status: "REJECTED",
-    rejectionReason: data.rejectionReason,
-    snapshotId: data.snapshotId,
-    gates: data.gates as unknown as Record<string, unknown>,
-    aiVotes: data.aiVotes as unknown as Record<string, unknown>,
-    expiresAt: new Date(now.getTime() + data.settings.signalExpirySec * 1000),
-    decidedAt: now,
-  });
-  return id;
+function serializeConsensusForStorage(cv: ConsensusVerdict): Record<string, unknown> {
+  return {
+    verdict: cv.verdict,
+    direction: cv.direction,
+    globalConfidence: cv.globalConfidence,
+    trapScore: cv.trapScore,
+    dataCompleteness: cv.dataCompleteness,
+    deterministicAgreeCount: cv.deterministicAgreeCount,
+    llmAgreeCount: cv.llmAgreeCount,
+    blockReason: cv.blockReason,
+    thresholds: cv.thresholds,
+    computedAt: cv.computedAt,
+    agents: cv.agents.map((a: GuardedAgent) => ({
+      agentId: a.output.agentId,
+      agentName: a.output.agentName,
+      vote: a.output.vote,
+      confidence: a.output.confidence,
+      reasoning: a.output.reasoning,
+      signals: a.output.signals,
+      latencyMs: a.output.latencyMs,
+      evidence: a.output.evidence,
+      guard: a.guard,
+    })),
+  };
+}
+
+function consensusToAiVotes(cv: ConsensusVerdict): AiVote[] {
+  const votes: AiVote[] = [];
+  for (const ga of cv.agents) {
+    // For LLM ensemble, expand individual member votes if available
+    const ext = ga.output as typeof ga.output & { memberVotes?: Array<{ modelId: string; modelName: string; vote: string; confidence: number; reason: string | null; latencyMs: number; hadEvidence: boolean }> };
+    if (ga.output.agentId === "llm_ensemble" && Array.isArray(ext.memberVotes)) {
+      for (const mv of ext.memberVotes) {
+        const v = mv.vote as AiVote["direction"];
+        votes.push({
+          modelId: mv.modelId,
+          modelName: mv.modelName,
+          direction: (v === "BUY" || v === "SELL" || v === "NEUTRAL") ? v : "ABSTAIN",
+          rationale: mv.reason,
+          latencyMs: mv.latencyMs,
+          agreed: mv.vote === cv.direction,
+        });
+      }
+    } else {
+      const v = ga.output.vote as AiVote["direction"];
+      votes.push({
+        modelId: ga.output.agentId,
+        modelName: ga.output.agentName,
+        direction: (v === "BUY" || v === "SELL" || v === "NEUTRAL") ? v : "ABSTAIN",
+        rationale: ga.output.reasoning.slice(0, 200),
+        latencyMs: ga.output.latencyMs,
+        agreed: ga.output.vote === cv.direction && ga.guard.passed,
+      });
+    }
+  }
+  return votes;
 }
 
 export async function runOneCycle(): Promise<CycleResult> {
@@ -141,55 +146,113 @@ export async function runOneCycle(): Promise<CycleResult> {
     // 3. Compute equity for sizing/limits
     const equity = await computeEquityBreakdown(snapshot.spot);
 
-    // 4. Run rule engine
+    // 4. Pre-flight: gate 1 (exec mode on)
+    const execOn = settings.executionMode !== "OFF";
+    if (!execOn) {
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
+      return {
+        ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
+        rejectionReason: "executionMode=OFF", positionsClosed,
+        gates: [{ gate: "execution_mode_on", passed: false, reason: "executionMode=OFF, trading disabled" }],
+      };
+    }
+
+    // 5. Pre-flight: source live
+    if (snapshot.sourceStatus !== "live") {
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
+      return {
+        ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
+        rejectionReason: `source status: ${snapshot.sourceStatus}`, positionsClosed,
+        gates: [
+          { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
+          { gate: "source_live", passed: false, reason: `source status: ${snapshot.sourceStatus}` },
+        ],
+      };
+    }
+
+    // 6. Pre-flight: directional signal
+    const hasDir = snapshot.signalDirection === "BUY" || snapshot.signalDirection === "SELL";
+    if (!hasDir) {
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
+      return {
+        ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
+        rejectionReason: "no directional signal (NEUTRAL)", positionsClosed,
+        gates: [
+          { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
+          { gate: "source_live", passed: true, reason: "data source live" },
+          { gate: "directional_signal", passed: false, reason: "no directional signal (NEUTRAL)" },
+        ],
+      };
+    }
+
+    // 7. ── MULTI-AGENT CONSENSUS ENGINE ──────────────────────────────────────
+    //    Run all 6 agents (platform, orderflow, trap, macro, vision, LLM ensemble)
+    //    through the anti-hallucination guard and strict consensus gate.
+    const consensusResult = await runConsensus(snapshot);
+
+    if (consensusResult.verdict === "BLOCK") {
+      logger.info(
+        { blockReason: consensusResult.blockReason, direction: consensusResult.direction },
+        "trader.cycle.consensus_blocked",
+      );
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
+      return {
+        ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
+        rejectionReason: `CONSENSUS BLOCK: ${consensusResult.blockReason}`,
+        positionsClosed,
+        gates: [
+          { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
+          { gate: "source_live", passed: true, reason: "data source live" },
+          { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
+          { gate: "consensus_engine", passed: false, reason: consensusResult.blockReason ?? "consensus blocked" },
+        ],
+        consensus: consensusResult,
+      };
+    }
+
+    // 8. Risk rules (ATR, timing, COT, RR, daily cap, max positions, max trades, no dup)
     const ruleEval = await evaluateRules(snapshot, settings, equity);
 
     if (!ruleEval.passed) {
       const lastFail = ruleEval.gates.find((g) => !g.passed);
-      const reason = lastFail?.reason ?? "rule engine rejected";
-      await recordCycleTimes(
-        settings.tradingMode === "DAILY" ? 300 : 180,
-      );
-      logger.info(
-        { reason, gates: ruleEval.gates.length },
-        "trader.cycle.rules_rejected",
-      );
+      const reason = lastFail?.reason ?? "risk rule rejected";
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
+      logger.info({ reason }, "trader.cycle.rules_rejected");
       return {
-        ranAt,
-        ok: true,
-        signalCreated: false,
-        signalId: null,
-        signalStatus: null,
-        rejectionReason: reason,
-        positionsClosed,
-        gates: ruleEval.gates,
+        ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
+        rejectionReason: reason, positionsClosed,
+        gates: [
+          { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
+          { gate: "source_live", passed: true, reason: "data source live" },
+          { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
+          { gate: "consensus_engine", passed: true, reason: `consensus ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}, agents=${consensusResult.deterministicAgreeCount}, llms=${consensusResult.llmAgreeCount}` },
+          ...ruleEval.gates,
+        ],
+        consensus: consensusResult,
       };
     }
 
-    // 5. AI confirmation (if enabled)
-    let aiVotes: AiVote[] = [];
-    let aiPassed: boolean | null = null;
-    let aiAgreeCount = 0;
-    let aiVotersCount = 0;
-    if (settings.requireAiConfirmation) {
-      const aiRes = await aiConfirm(
-        snapshot,
-        ruleEval.direction!,
-        settings.aiConfirmCount,
-      );
-      aiVotes = aiRes.votes;
-      aiAgreeCount = aiRes.agreeCount;
-      aiVotersCount = aiRes.votersCount;
-      aiPassed = aiRes.passed;
-    }
+    // Use consensus direction (most recent agreement)
+    const direction = consensusResult.direction ?? ruleEval.direction!;
 
-    // 6. Sizing
-    const sizing = computePositionSize(
-      ruleEval.entry!,
-      ruleEval.stopLoss!,
-      settings,
-      equity,
-    );
+    // 9. Sizing
+    const sizing = computePositionSize(ruleEval.entry!, ruleEval.stopLoss!, settings, equity);
+
+    // Serialize agents for audit trail storage
+    const allGates: GateDecision[] = [
+      { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
+      { gate: "source_live", passed: true, reason: "data source live" },
+      { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
+      {
+        gate: "consensus_engine",
+        passed: true,
+        reason: `ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}, trap=${consensusResult.trapScore.toFixed(3)}, det=${consensusResult.deterministicAgreeCount}, llm=${consensusResult.llmAgreeCount}, complete=${consensusResult.dataCompleteness.toFixed(3)}`,
+      },
+      ...ruleEval.gates,
+    ];
+
+    const aiVotes = consensusToAiVotes(consensusResult);
+    const agreeCount = aiVotes.filter((v) => v.agreed).length;
 
     const signalId = randomUUID();
     const now = new Date();
@@ -198,8 +261,8 @@ export async function runOneCycle(): Promise<CycleResult> {
       createdAt: now,
       tradingMode: settings.tradingMode,
       executionMode: settings.executionMode,
-      direction: ruleEval.direction!,
-      confidence: snapshot.signalConfidence,
+      direction,
+      confidence: consensusResult.globalConfidence,
       sourceScore: snapshot.signalScore,
       entry: ruleEval.entry!,
       stopLoss: ruleEval.stopLoss!,
@@ -209,36 +272,14 @@ export async function runOneCycle(): Promise<CycleResult> {
       sizeUnits: sizing.sizeUnits,
       riskAmount: sizing.riskAmount,
       rulesPassed: true,
-      aiPassed,
-      aiVotersCount,
-      aiAgreeCount,
+      aiPassed: true,
+      aiVotersCount: aiVotes.length,
+      aiAgreeCount: agreeCount,
       snapshotId,
-      gates: ruleEval.gates as unknown as Record<string, unknown>,
+      gates: serializeConsensusForStorage(consensusResult) as unknown as Record<string, unknown>,
       aiVotes: aiVotes as unknown as Record<string, unknown>,
       expiresAt: new Date(now.getTime() + settings.signalExpirySec * 1000),
     };
-
-    if (settings.requireAiConfirmation && aiPassed === false) {
-      await db.insert(traderSignalsTable).values({
-        ...baseRecord,
-        status: "REJECTED",
-        rejectionReason: `AI confirmation failed (${aiAgreeCount}/${aiVotersCount} agreed, need ${settings.aiConfirmCount})`,
-        decidedAt: now,
-      });
-      await recordCycleTimes(
-        settings.tradingMode === "DAILY" ? 300 : 180,
-      );
-      return {
-        ranAt,
-        ok: true,
-        signalCreated: true,
-        signalId,
-        signalStatus: "REJECTED",
-        rejectionReason: `AI confirmation failed (${aiAgreeCount}/${aiVotersCount})`,
-        positionsClosed,
-        gates: ruleEval.gates,
-      };
-    }
 
     if (sizing.sizeUnits <= 0) {
       await db.insert(traderSignalsTable).values({
@@ -247,26 +288,18 @@ export async function runOneCycle(): Promise<CycleResult> {
         rejectionReason: "computed position size is zero",
         decidedAt: now,
       });
-      await recordCycleTimes(
-        settings.tradingMode === "DAILY" ? 300 : 180,
-      );
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
       return {
-        ranAt,
-        ok: true,
-        signalCreated: true,
-        signalId,
-        signalStatus: "REJECTED",
-        rejectionReason: "size=0",
-        positionsClosed,
-        gates: ruleEval.gates,
+        ranAt, ok: true, signalCreated: true, signalId, signalStatus: "REJECTED",
+        rejectionReason: "size=0", positionsClosed, gates: allGates, consensus: consensusResult,
       };
     }
 
-    // 7. Decide AUTO vs MANUAL
+    // 10. Execute
     if (settings.executionMode === "AUTO") {
       const pos = await openPosition({
         signalId,
-        side: ruleEval.direction!,
+        side: direction as "BUY" | "SELL",
         entry: ruleEval.entry!,
         stopLoss: ruleEval.stopLoss!,
         takeProfit: ruleEval.takeProfit!,
@@ -279,50 +312,28 @@ export async function runOneCycle(): Promise<CycleResult> {
         positionId: pos.id,
         decidedAt: now,
       });
-      await recordCycleTimes(
-        settings.tradingMode === "DAILY" ? 300 : 180,
-      );
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
       return {
-        ranAt,
-        ok: true,
-        signalCreated: true,
-        signalId,
-        signalStatus: "EXECUTED",
-        rejectionReason: null,
-        positionsClosed,
-        gates: ruleEval.gates,
+        ranAt, ok: true, signalCreated: true, signalId, signalStatus: "EXECUTED",
+        rejectionReason: null, positionsClosed, gates: allGates, consensus: consensusResult,
       };
     }
 
-    // MANUAL mode: insert as PENDING for user approval
-    await db.insert(traderSignalsTable).values({
-      ...baseRecord,
-      status: "PENDING",
-    });
+    // MANUAL: insert as PENDING
+    await db.insert(traderSignalsTable).values({ ...baseRecord, status: "PENDING" });
     await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
     return {
-      ranAt,
-      ok: true,
-      signalCreated: true,
-      signalId,
-      signalStatus: "PENDING",
-      rejectionReason: null,
-      positionsClosed,
-      gates: ruleEval.gates,
+      ranAt, ok: true, signalCreated: true, signalId, signalStatus: "PENDING",
+      rejectionReason: null, positionsClosed, gates: allGates, consensus: consensusResult,
     };
+
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err: msg }, "trader.cycle.error");
     await recordCycleError(msg);
     return {
-      ranAt,
-      ok: false,
-      signalCreated: false,
-      signalId: null,
-      signalStatus: null,
-      rejectionReason: msg,
-      positionsClosed: 0,
-      gates: [],
+      ranAt, ok: false, signalCreated: false, signalId: null, signalStatus: null,
+      rejectionReason: msg, positionsClosed: 0, gates: [],
     };
   }
 }

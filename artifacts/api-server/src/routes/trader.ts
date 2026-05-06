@@ -375,6 +375,51 @@ router.post("/trader/cycle/run", async (_req, res) => {
   res.json(RunTraderCycleResponse.parse(result));
 });
 
+// ── Multi-Agent Consensus: dry-run (no trade committed) ───────────────────
+router.get("/trader/decision", async (req, res) => {
+  try {
+    const { runConsensus } = await import("../lib/trader/consensus.js");
+    const { snapshot } = await fetchAndPersistSnapshot();
+    const verdict = await runConsensus(snapshot);
+    res.json(verdict);
+  } catch (err) {
+    req.log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "trader.decision.failed",
+    );
+    res.status(503).json({
+      error: `decision engine failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
+});
+
+// ── Vision Agent: ingest frame from external source (Bookmap/heatmap) ────
+router.post("/trader/ingest/frame", async (req, res) => {
+  try {
+    const { ingestFrame, getFrameBuffer } = await import("../lib/trader/agents/vision.js");
+    const body = req.body as Record<string, unknown>;
+
+    const clusters = Array.isArray(body.clusters) ? body.clusters : [];
+    const labels = Array.isArray(body.labels)
+      ? (body.labels as unknown[]).filter((l): l is string => typeof l === "string")
+      : [];
+    const timestamp = typeof body.timestamp === "string"
+      ? body.timestamp
+      : new Date().toISOString();
+    const sourceUrl = typeof body.sourceUrl === "string" ? body.sourceUrl : undefined;
+
+    ingestFrame({ clusters: clusters as Parameters<typeof ingestFrame>[0]["clusters"], labels, timestamp, sourceUrl });
+    const buf = getFrameBuffer();
+    res.json({ ok: true, bufferedFrames: buf.length, timestamp });
+  } catch (err) {
+    req.log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "trader.ingest.frame.failed",
+    );
+    res.status(400).json({ error: String(err) });
+  }
+});
+
 router.get("/trader/dashboard", async (_req, res) => {
   await ensureSingletons();
   await ensureCycleStateRow();

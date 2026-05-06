@@ -1,11 +1,12 @@
-import { useGetTraderDashboard, getGetTraderDashboardQueryKey } from "@workspace/api-client-react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
+import { useGetTraderDashboard, useGetTraderDecision, getGetTraderDashboardQueryKey, getGetTraderDecisionQueryKey } from "@workspace/api-client-react";
+import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, RadialBarChart, RadialBar, Cell } from "recharts";
 import { formatMoney, formatPercent, formatPrice, formatTimeAbsolute, formatUnits } from "@/lib/format";
 import { PnlDisplay, DirectionBadge, StatusBadge } from "@/components/ui-patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowUpRight, TrendingDown, TrendingUp, Clock, AlertTriangle, Zap, Shield, Target } from "lucide-react";
+import { AlertCircle, ArrowUpRight, TrendingUp, Clock, AlertTriangle, Zap, Shield, Target, Cpu, Brain, Activity, Eye, ShieldCheck, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { motion, type Variants } from "framer-motion";
 import { Link } from "wouter";
 
@@ -22,9 +23,39 @@ const itemVariants: Variants = {
   show: { opacity: 1, y: 0, transition: { ease: "easeOut", duration: 0.3 } }
 };
 
+const AGENT_ICONS: Record<string, typeof Activity> = {
+  platform_analyzer: Target,
+  orderflow: Activity,
+  trap_engine: ShieldCheck,
+  macro: TrendingUp,
+  vision: Eye,
+  llm_ensemble: Brain,
+};
+
+const AGENT_LABELS: Record<string, string> = {
+  platform_analyzer: "محلل المنصة",
+  orderflow: "تدفق الأوامر",
+  trap_engine: "كشف الفخ",
+  macro: "العوامل الكلية",
+  vision: "رؤية الهيت ماب",
+  llm_ensemble: "نماذج LLM (Plan 0)",
+};
+
 export default function Dashboard() {
   const { data, isLoading, error } = useGetTraderDashboard({
     query: { queryKey: getGetTraderDashboardQueryKey(), refetchInterval: 8000 }
+  });
+
+  const {
+    data: decisionData,
+    isFetching: decisionFetching,
+    refetch: refetchDecision,
+  } = useGetTraderDecision({
+    query: {
+      queryKey: getGetTraderDecisionQueryKey(),
+      enabled: false,
+      staleTime: 0,
+    }
   });
 
   if (isLoading) {
@@ -146,6 +177,129 @@ export default function Dashboard() {
                 <span className="font-mono">{lastCycleAt ? formatTimeAbsolute(lastCycleAt).split(" ")[1] : "—"}</span>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* ── Consensus Engine Live Panel ──────────────────────────────────── */}
+      <motion.div variants={itemVariants}>
+        <Card className={`border-2 transition-colors ${
+          decisionData
+            ? decisionData.verdict === "ALLOW"
+              ? "border-emerald-500/40"
+              : "border-destructive/40"
+            : "border-border"
+        }`}>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Cpu className="h-5 w-5 text-primary" />
+                محرك الإجماع متعدد الوكلاء (6 وكلاء + Plan 0)
+              </div>
+              <div className="flex items-center gap-3">
+                {decisionData && (
+                  <Badge className={decisionData.verdict === "ALLOW"
+                    ? "bg-emerald-600 text-white text-xs"
+                    : "bg-destructive text-white text-xs"}>
+                    {decisionData.verdict === "ALLOW" ? "مسموح" : "محظور"}
+                  </Badge>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetchDecision()}
+                  disabled={decisionFetching}
+                  className="h-8 text-xs gap-1"
+                >
+                  <RefreshCw className={`w-3 h-3 ${decisionFetching ? "animate-spin" : ""}`} />
+                  {decisionFetching ? "جارٍ التحليل..." : "تشغيل تحليل الإجماع"}
+                </Button>
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {!decisionData && !decisionFetching && (
+              <div className="text-center py-8 text-muted-foreground border border-dashed border-border rounded-lg">
+                <Cpu className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">اضغط "تشغيل تحليل الإجماع" لاستطلاع 6 وكلاء + نماذج Plan 0 في الوقت الفعلي</p>
+                <p className="text-xs mt-1 opacity-60">يستغرق ~10-15 ثانية (يشمل استدعاء نماذج LLM)</p>
+              </div>
+            )}
+            {decisionFetching && (
+              <div className="space-y-3 py-4">
+                {["محلل المنصة", "تدفق الأوامر", "كشف الفخ", "العوامل الكلية", "رؤية الهيت ماب", "نماذج LLM (Plan 0)"].map((label) => (
+                  <div key={label} className="flex items-center gap-3 p-3 border border-border rounded-lg animate-pulse">
+                    <div className="w-4 h-4 rounded-full bg-muted" />
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <div className="mr-auto w-16 h-5 bg-muted rounded" />
+                  </div>
+                ))}
+              </div>
+            )}
+            {decisionData && !decisionFetching && (
+              <div className="space-y-4">
+                {/* Threshold row */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {[
+                    { label: "الثقة العالمية", value: decisionData.globalConfidence, threshold: decisionData.thresholds?.minGlobalConfidence ?? 0.8, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: false },
+                    { label: "نقاط الفخ", value: decisionData.trapScore, threshold: decisionData.thresholds?.maxTrapScore ?? 0.2, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: true },
+                    { label: "اكتمال البيانات", value: decisionData.dataCompleteness, threshold: decisionData.thresholds?.minDataCompleteness ?? 0.9, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: false },
+                    { label: "توافق الوكلاء", value: decisionData.deterministicAgreeCount, threshold: decisionData.thresholds?.minDeterministicAgents ?? 3, fmt: (v: number) => `${v}`, inverted: false },
+                    { label: "توافق LLM", value: decisionData.llmAgreeCount, threshold: decisionData.thresholds?.minLlmAgents ?? 2, fmt: (v: number) => `${v}`, inverted: false },
+                  ].map((m) => {
+                    const passing = m.inverted ? m.value <= m.threshold : m.value >= m.threshold;
+                    return (
+                      <div key={m.label} className={`p-3 rounded-lg border text-center ${passing ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/30 bg-destructive/5"}`}>
+                        <div className={`text-xl font-bold font-mono ${passing ? "text-emerald-400" : "text-destructive"}`}>{m.fmt(m.value)}</div>
+                        <div className="text-xs text-muted-foreground mt-1">{m.label}</div>
+                        <div className="text-[10px] font-mono mt-0.5 opacity-60">{m.inverted ? "<=" : ">="} {m.fmt(m.threshold)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Agent grid */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {decisionData.agents?.map((ga: { output: { agentId: string; vote: string; confidence: number }; guard: { passed: boolean; adjustedConfidence: number } }) => {
+                    const Icon = AGENT_ICONS[ga.output.agentId] ?? Activity;
+                    const label = AGENT_LABELS[ga.output.agentId] ?? ga.output.agentId;
+                    const direction = decisionData.direction;
+                    const isAgree = ga.output.vote === direction;
+                    const voteColor =
+                      ga.output.vote === "BUY" ? "text-emerald-400"
+                      : ga.output.vote === "SELL" ? "text-destructive"
+                      : "text-muted-foreground";
+                    return (
+                      <div key={ga.output.agentId}
+                        className={`p-3 rounded-lg border text-center ${
+                          isAgree && ga.guard.passed
+                            ? "border-emerald-500/30 bg-emerald-500/5"
+                            : !ga.guard.passed
+                              ? "border-border/50 bg-muted/10 opacity-50"
+                              : "border-border bg-card"
+                        }`}>
+                        <Icon className="w-4 h-4 mx-auto mb-1 text-primary" />
+                        <div className={`text-sm font-bold font-mono ${voteColor}`}>{ga.output.vote}</div>
+                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</div>
+                        <div className="text-[10px] font-mono mt-0.5 opacity-70">{(ga.guard.adjustedConfidence * 100).toFixed(0)}%</div>
+                        {!ga.guard.passed && (
+                          <XCircle className="w-3 h-3 text-destructive mx-auto mt-1" />
+                        )}
+                        {ga.guard.passed && isAgree && (
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400 mx-auto mt-1" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {decisionData.blockReason && (
+                  <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded p-2 font-mono">
+                    {decisionData.blockReason}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </motion.div>

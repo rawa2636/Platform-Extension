@@ -532,6 +532,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/CycleRunResult"
 
+  /trader/decision:
+    get:
+      operationId: getTraderDecision
+      tags: [trader-cycle]
+      summary: Run multi-agent consensus engine (dry-run, no trade committed)
+      responses:
+        "200":
+          description: Consensus verdict from all 6 agents + anti-hallucination guard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConsensusVerdict"
+        "503":
+          description: Decision engine failed (source unreachable)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
+
+  /trader/ingest/frame:
+    post:
+      operationId: ingestTraderFrame
+      tags: [trader-cycle]
+      summary: Ingest a Bookmap/heatmap frame for the Vision Agent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FrameIngestRequest"
+      responses:
+        "200":
+          description: Frame ingested
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestFrameResult"
+
   /trader/dashboard:
     get:
       operationId: getTraderDashboard
@@ -1291,6 +1329,114 @@ components:
           items:
             $ref: "#/components/schemas/GateDecision"
       required: [ranAt, ok, signalCreated, positionsClosed, gates]
+
+    ConsensusThresholds:
+      type: object
+      properties:
+        minDeterministicAgents: { type: integer }
+        minLlmAgents: { type: integer }
+        minGlobalConfidence: { type: number }
+        maxTrapScore: { type: number }
+        minDataCompleteness: { type: number }
+      required: [minDeterministicAgents, minLlmAgents, minGlobalConfidence, maxTrapScore, minDataCompleteness]
+
+    ConsensusGuardResult:
+      type: object
+      properties:
+        agentId: { type: string }
+        passed: { type: boolean }
+        reasons:
+          type: array
+          items: { type: string }
+        penaltyScore: { type: number }
+        adjustedConfidence: { type: number }
+      required: [agentId, passed, reasons, penaltyScore, adjustedConfidence]
+
+    ConsensusAgentOutput:
+      type: object
+      properties:
+        agentId: { type: string }
+        agentName: { type: string }
+        vote: { type: string, enum: [BUY, SELL, NEUTRAL, ABSTAIN] }
+        confidence: { type: number }
+        reasoning: { type: string }
+        latencyMs: { type: number }
+        evidence:
+          type: object
+          properties:
+            sources: { type: array, items: { type: string } }
+            features_used: { type: array, items: { type: string } }
+            timestamp: { type: string }
+          required: [sources, features_used, timestamp]
+        signals: { type: object }
+      required: [agentId, agentName, vote, confidence, reasoning, latencyMs]
+
+    ConsensusGuardedAgent:
+      type: object
+      properties:
+        output:
+          $ref: "#/components/schemas/ConsensusAgentOutput"
+        guard:
+          $ref: "#/components/schemas/ConsensusGuardResult"
+      required: [output, guard]
+
+    ConsensusVerdict:
+      type: object
+      properties:
+        verdict: { type: string, enum: [ALLOW, BLOCK] }
+        direction: { type: string, nullable: true }
+        globalConfidence: { type: number }
+        trapScore: { type: number }
+        dataCompleteness: { type: number }
+        deterministicAgreeCount: { type: integer }
+        llmAgreeCount: { type: integer }
+        blockReason: { type: string, nullable: true }
+        computedAt: { type: string, format: date-time }
+        thresholds:
+          $ref: "#/components/schemas/ConsensusThresholds"
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConsensusGuardedAgent"
+      required:
+        - verdict
+        - globalConfidence
+        - trapScore
+        - dataCompleteness
+        - deterministicAgreeCount
+        - llmAgreeCount
+        - computedAt
+        - agents
+
+    FrameIngestCluster:
+      type: object
+      properties:
+        price: { type: number }
+        intensity: { type: number }
+        type: { type: string, enum: [buy, sell, neutral] }
+      required: [price, intensity, type]
+
+    FrameIngestRequest:
+      type: object
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: "#/components/schemas/FrameIngestCluster"
+        labels:
+          type: array
+          items: { type: string }
+        timestamp: { type: string }
+        sourceUrl: { type: string }
+      required: [clusters, labels]
+
+    IngestFrameResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        bufferedFrames: { type: integer }
+        timestamp: { type: string }
+      required: [ok, bufferedFrames, timestamp]
 
     TraderDashboard:
       type: object

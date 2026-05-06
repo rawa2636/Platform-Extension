@@ -920,6 +920,79 @@ export const RunTraderCycleResponse = zod.object({
 });
 
 /**
+ * @summary Run multi-agent consensus engine (dry-run, no trade committed)
+ */
+export const GetTraderDecisionResponse = zod.object({
+  verdict: zod.enum(["ALLOW", "BLOCK"]),
+  direction: zod.string().nullish(),
+  globalConfidence: zod.number(),
+  trapScore: zod.number(),
+  dataCompleteness: zod.number(),
+  deterministicAgreeCount: zod.number(),
+  llmAgreeCount: zod.number(),
+  blockReason: zod.string().nullish(),
+  computedAt: zod.coerce.date(),
+  thresholds: zod
+    .object({
+      minDeterministicAgents: zod.number(),
+      minLlmAgents: zod.number(),
+      minGlobalConfidence: zod.number(),
+      maxTrapScore: zod.number(),
+      minDataCompleteness: zod.number(),
+    })
+    .optional(),
+  agents: zod.array(
+    zod.object({
+      output: zod.object({
+        agentId: zod.string(),
+        agentName: zod.string(),
+        vote: zod.enum(["BUY", "SELL", "NEUTRAL", "ABSTAIN"]),
+        confidence: zod.number(),
+        reasoning: zod.string(),
+        latencyMs: zod.number(),
+        evidence: zod
+          .object({
+            sources: zod.array(zod.string()),
+            features_used: zod.array(zod.string()),
+            timestamp: zod.string(),
+          })
+          .optional(),
+        signals: zod.object({}).passthrough().optional(),
+      }),
+      guard: zod.object({
+        agentId: zod.string(),
+        passed: zod.boolean(),
+        reasons: zod.array(zod.string()),
+        penaltyScore: zod.number(),
+        adjustedConfidence: zod.number(),
+      }),
+    }),
+  ),
+});
+
+/**
+ * @summary Ingest a Bookmap/heatmap frame for the Vision Agent
+ */
+export const IngestTraderFrameBody = zod.object({
+  clusters: zod.array(
+    zod.object({
+      price: zod.number(),
+      intensity: zod.number(),
+      type: zod.enum(["buy", "sell", "neutral"]),
+    }),
+  ),
+  labels: zod.array(zod.string()),
+  timestamp: zod.string().optional(),
+  sourceUrl: zod.string().optional(),
+});
+
+export const IngestTraderFrameResponse = zod.object({
+  ok: zod.boolean(),
+  bufferedFrames: zod.number(),
+  timestamp: zod.string(),
+});
+
+/**
  * @summary Aggregated dashboard payload (account + open positions + recent signals + last cycle)
  */
 export const getTraderDashboardResponseSettingsRiskPerTradePctMin = 0.05;

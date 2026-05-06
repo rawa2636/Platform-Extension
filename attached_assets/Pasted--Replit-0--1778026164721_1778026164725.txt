@@ -1,0 +1,229 @@
+فيما يلي برومبت جاهز لـ Replit + تصميم معماري قابل للتنفيذ يدمج طبقة (0) لتوليد/اختيار النماذج مع نظام التداول، ويضيف طبقة إجماع صارمة تمنع إخراج مناطق انعكاس إلا عند تحقق شروط دقة متعددة.
+
+
+---
+
+🧠 برومبت لـ Replit (انسخه كما هو)
+
+Build a production-ready, multi-agent trading intelligence system that integrates:
+
+1) External platform adapter:
+   - Source: https://source-bootstrap--wenat95130.replit.app
+   - Normalize: price, signal, confidence, liquidity zones, sentiment, timing metrics.
+
+2) Model Orchestrator (Layer 0):
+   - Pull and harvest endpoints from no-cost-ai repository.
+   - Daily refresh at 01:00 UTC.
+   - Health check, benchmark (latency, tps, success), rank top >= 30.
+   - Expose /models/top and /route.
+
+3) Real-time Data:
+   - Gold spot price stream (XAUUSD) via a reliable API.
+   - Economic calendar + news sentiment.
+   - Optional: order book/depth if available.
+
+4) Screen Capture Ingestion (YouTube Bookmap):
+   - Capture frames every 3 seconds from a given YouTube live URL.
+   - Run OCR + image features to extract heatmap/volume clusters.
+   - Convert to structured signals (heat zones, absorption hints).
+
+5) Agents:
+   - PlatformAnalyzerAgent (external platform features)
+   - OrderFlowAgent (delta/imbalance; proxy if no depth)
+   - TrapEngineAgent (fake breakout, sweep, absorption)
+   - MacroAgent (DXY, yields, VIX bias)
+   - VisionAgent (YouTube frames → heat zones)
+   - ModelEnsembleAgent (query multiple LLM endpoints from /route)
+   - ConsensusAgent (strict gating)
+   - RiskManagerAgent (dynamic sizing, daily limits)
+   - ExecutionAgent (paper-trade by default)
+
+6) Anti-Hallucination Guard (Critical):
+   - Every model must provide:
+     - Structured evidence: {sources, features_used, timestamps}
+     - Confidence score
+   - Reject outputs without evidence.
+   - Cross-check claims against raw features.
+   - Penalize inconsistencies.
+
+7) Consensus Rules (Hard Gate):
+   - Require agreement across:
+     - >= 3 independent agents (platform/orderflow/vision/macro)
+     - >= 2 LLMs with evidence consistency
+   - Thresholds:
+     - global_confidence >= 0.8
+     - trap_score <= 0.2
+     - data_completeness >= 0.9
+   - Only then allow a signal:
+     - stop_loss in 10–30 pips
+     - take_profit in 300–500 pips
+   - Otherwise: WAIT.
+
+8) APIs:
+   - GET /decision (final gated decision)
+   - GET /models/top
+   - POST /route
+   - POST /ingest/frame
+   - GET /health
+
+9) Tech:
+   - Python, FastAPI, asyncio
+   - Redis (cache), Postgres (history)
+   - WebSocket for streams
+   - Docker-ready
+
+10) Safety:
+   - Default to paper trading.
+   - No execution without explicit enable flag.
+
+Deliver:
+- Full project scaffold
+- Working endpoints
+- Example configs
+- Clear logs for each agent decision
+
+
+---
+
+🧩 المعمارية الكمية (Quant Architecture)
+
+[ Layer 0: Model Orchestrator ]
+        ↓
+[ Adapter Layer (External Platform) ]
+        ↓
+[ Data Fusion Bus (Redis Streams) ]
+        ↓
+ ┌──────────── Multi-Agent Core ────────────┐
+ │ PlatformAnalyzer │ OrderFlow │ Macro     │
+ │ TrapEngine       │ Vision    │ News      │
+ │ ModelEnsemble (LLMs from Layer 0)       │
+ └───────────────┬─────────────────────────┘
+                 ↓
+        [ Anti-Hallucination Guard ]
+                 ↓
+           [ Consensus Engine ]
+                 ↓
+           [ Risk Manager ]
+                 ↓
+           [ Execution Engine ]
+
+
+---
+
+🧬 طبقة منع الهلوسة (Guard)
+
+def guard_validate(output, features):
+    if "evidence" not in output:
+        return False
+
+    if output["confidence"] < 0.6:
+        return False
+
+    # تحقق من التوافق مع البيانات الخام
+    if not cross_check(output, features):
+        return False
+
+    return True
+
+
+---
+
+🤖 نموذج استدعاء متعدد LLM
+
+async def ensemble_query(prompt):
+    models = await get_top_models(5)
+
+    results = []
+    for m in models:
+        r = await call_model(m, prompt)
+        if guard_validate(r, features):
+            results.append(r)
+
+    return results
+
+
+---
+
+⚖️ محرك الإجماع (Core Logic)
+
+def consensus(agent_outputs, llm_outputs):
+    agree_agents = count_agreement(agent_outputs)
+    agree_llm = count_agreement(llm_outputs)
+
+    global_conf = compute_confidence(agent_outputs, llm_outputs)
+
+    if (
+        agree_agents >= 3 and
+        agree_llm >= 2 and
+        global_conf >= 0.8 and
+        trap_score(agent_outputs) <= 0.2 and
+        completeness(agent_outputs) >= 0.9
+    ):
+        return "ALLOW"
+
+    return "BLOCK"
+
+
+---
+
+📸 Vision Agent (YouTube → Features)
+
+def process_frame(frame):
+    text = ocr(frame)
+    heatmap = detect_heat_zones(frame)
+
+    return {
+        "clusters": heatmap,
+        "labels": text
+    }
+
+
+---
+
+⚡ القرار النهائي
+
+if consensus == "ALLOW":
+    return {
+        "action": "TRADE",
+        "sl": random_between(10,30),
+        "tp": random_between(300,500)
+    }
+else:
+    return {
+        "action": "WAIT"
+    }
+
+
+---
+
+🔻 ملاحظات حاسمة
+
+التقاط YouTube يجب أن يلتزم بشروط الاستخدام.
+
+بدون Order Book حقيقي، بعض الإشارات ستكون تقريبية.
+
+“SL 10–30 / TP 300–500” يتطلب تحقق صارم جدًا (قد يقلل عدد الفرص).
+
+
+
+---
+
+🚀 النتيجة
+
+طبقة (0) = وقود النماذج
+
+الطبقات العليا = تحليل + كشف + دمج
+
+Guard + Consensus = منع الأخطاء قبل التنفيذ
+
+
+
+---
+
+إذا رغبت، يمكن تحويل هذا مباشرة إلى:
+
+مشروع Replit كامل جاهز
+
+أو إضافة **WebSocket بث حي للقرار**
+
+أو نظام Backtesting للتحقق من دقة الإجماع

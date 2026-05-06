@@ -449,6 +449,106 @@ export interface CycleRunResult {
   gates: GateDecision[];
 }
 
+export interface ConsensusThresholds {
+  minDeterministicAgents: number;
+  minLlmAgents: number;
+  minGlobalConfidence: number;
+  maxTrapScore: number;
+  minDataCompleteness: number;
+}
+
+export interface ConsensusGuardResult {
+  agentId: string;
+  passed: boolean;
+  reasons: string[];
+  penaltyScore: number;
+  adjustedConfidence: number;
+}
+
+export type ConsensusAgentOutputVote =
+  (typeof ConsensusAgentOutputVote)[keyof typeof ConsensusAgentOutputVote];
+
+export const ConsensusAgentOutputVote = {
+  BUY: "BUY",
+  SELL: "SELL",
+  NEUTRAL: "NEUTRAL",
+  ABSTAIN: "ABSTAIN",
+} as const;
+
+export type ConsensusAgentOutputEvidence = {
+  sources: string[];
+  features_used: string[];
+  timestamp: string;
+};
+
+export type ConsensusAgentOutputSignals = { [key: string]: unknown };
+
+export interface ConsensusAgentOutput {
+  agentId: string;
+  agentName: string;
+  vote: ConsensusAgentOutputVote;
+  confidence: number;
+  reasoning: string;
+  latencyMs: number;
+  evidence?: ConsensusAgentOutputEvidence;
+  signals?: ConsensusAgentOutputSignals;
+}
+
+export interface ConsensusGuardedAgent {
+  output: ConsensusAgentOutput;
+  guard: ConsensusGuardResult;
+}
+
+export type ConsensusVerdictVerdict =
+  (typeof ConsensusVerdictVerdict)[keyof typeof ConsensusVerdictVerdict];
+
+export const ConsensusVerdictVerdict = {
+  ALLOW: "ALLOW",
+  BLOCK: "BLOCK",
+} as const;
+
+export interface ConsensusVerdict {
+  verdict: ConsensusVerdictVerdict;
+  direction?: string | null;
+  globalConfidence: number;
+  trapScore: number;
+  dataCompleteness: number;
+  deterministicAgreeCount: number;
+  llmAgreeCount: number;
+  blockReason?: string | null;
+  computedAt: string;
+  thresholds?: ConsensusThresholds;
+  agents: ConsensusGuardedAgent[];
+}
+
+export type FrameIngestClusterType =
+  (typeof FrameIngestClusterType)[keyof typeof FrameIngestClusterType];
+
+export const FrameIngestClusterType = {
+  buy: "buy",
+  sell: "sell",
+  neutral: "neutral",
+} as const;
+
+export interface FrameIngestCluster {
+  price: number;
+  intensity: number;
+  type: FrameIngestClusterType;
+}
+
+export interface FrameIngestRequest {
+  clusters: FrameIngestCluster[];
+  labels: string[];
+  timestamp?: string;
+  sourceUrl?: string;
+}
+
+export interface IngestFrameResult {
+  ok: boolean;
+  bufferedFrames: number;
+  timestamp: string;
+}
+
 export type TraderDashboardEquityCurveItem = {
   t: string;
   equity: number;

@@ -105,12 +105,22 @@ Paper-trading control room for a single operator on XAU/USD. Consumes a real-tim
 ### Engine (`artifacts/api-server/src/lib/trader/`)
 - `datasource.ts` — fetches `/intelligence`, `/macro`, `/cot`, `/mode` and normalizes a TraderSnapshot
 - `account.ts` — singleton account read/write, daily reset, drawdown
-- `rules.ts` — 13 deterministic gates ordered: exec_on → source_live → directional → confidence → atr_sane → timing_ready (not BUILDING) → cot_filter (blocks aligned EXTREME) → rr_min → daily_loss_cap → max_open → max_trades_day → no_dup_direction
-- `ai-confirm.ts` — calls 2 Plan 0 chat models via OpenAI-compatible `/chat/completions`, temperature 0, expects single-line JSON `{"vote":"BUY|SELL|NEUTRAL","reason":"..."}`. Non-conforming = ABSTAIN. Both must agree on direction.
+- `rules.ts` — 13 deterministic gates: exec_on → source_live → directional → confidence → atr_sane → timing_ready → cot_filter → rr_min → daily_loss_cap → max_open → max_trades_day → no_dup_direction
 - `sizing.ts` — position size = (riskPct% × equity) / |entry − SL|
 - `positions.ts` — open/close logic, exit reasons (SL/TP/MANUAL), realized + unrealized PnL
-- `executor.ts` — full cycle: snapshot → exit-check existing positions → rules → AI confirm → sizing → AUTO/MANUAL/REJECT
+- `executor.ts` — full cycle: snapshot → exit-check → **consensus engine** → risk rules → sizing → AUTO/MANUAL/REJECT
 - `scheduler.ts` — auto-loop on the active mode's interval (DAILY 300s, MID 180s)
+
+### Multi-Agent Consensus Engine (`artifacts/api-server/src/lib/trader/`)
+6 specialized agents run in parallel → Anti-Hallucination Guard → Strict Consensus (5 gates):
+- **agents/platform-analyzer.ts** — trend, structure, momentum from snapshot
+- **agents/orderflow.ts** — buy/sell pressure, institutional footprint, bid/ask imbalance
+- **agents/trap-engine.ts** — detects bull/bear traps, stop hunts (feeds trapScore gate)
+- **agents/macro.ts** — COT, DXY correlation, macro regime alignment
+- **agents/vision.ts** — in-memory ring buffer (10 frames, 5min TTL) of Bookmap clusters; POST `/api/trader/ingest/frame`
+- **agents/model-ensemble.ts** — queries top 5 Plan 0 ACTIVE chat models from `models` table; requires structured evidence in LLM JSON response; ABSTAIN if non-conforming
+- **guard.ts** — per-agent: evidence validation, confidence ≥0.35, keyword cross-check, penalty scoring → adjustedConfidence
+- **consensus.ts** — 5-threshold gate: deterministicAgents ≥3, llmAgents ≥2, globalConfidence ≥0.8, trapScore ≤0.2, dataCompleteness ≥0.9; ALLOW or BLOCK with blockReason
 
 ### Routes (in `artifacts/api-server/src/routes/trader.ts`)
 - `GET /api/trader/account` / `POST /api/trader/account/reset`
@@ -121,6 +131,8 @@ Paper-trading control room for a single operator on XAU/USD. Consumes a real-tim
 - `GET /api/trader/positions` / `POST /api/trader/positions/:id/close`
 - `POST /api/trader/cycle/run` (manual cycle trigger)
 - `GET /api/trader/dashboard` (aggregated dashboard payload)
+- `GET /api/trader/decision` — dry-run consensus verdict (all 6 agents, no trade committed)
+- `POST /api/trader/ingest/frame` — push Bookmap/heatmap cluster frame to Vision Agent buffer
 
 ### Frontend pages (`artifacts/trader/src/pages`)
 `dashboard.tsx`, `signals.tsx`, `signal-detail.tsx` (gates + AI votes audit), `positions.tsx`, `settings.tsx`, `not-found.tsx`. Layout shell in `components/layout.tsx` with global execution-mode control and "تشغيل دورة الآن" button. All hooks come from `@workspace/api-client-react`.

@@ -17,14 +17,17 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ConsensusVerdict,
   CycleRunResult,
   Error,
   ErrorBody,
+  FrameIngestRequest,
   GetTopModelsParams,
   HarvestRun,
   HarvestStartResponse,
   HarvestStatus,
   HealthStatus,
+  IngestFrameResult,
   ListModelsParams,
   ListRunsParams,
   ListTraderPositionsParams,
@@ -1972,6 +1975,167 @@ export const useRunTraderCycle = <
   TContext
 > => {
   return useMutation(getRunTraderCycleMutationOptions(options));
+};
+
+/**
+ * @summary Run multi-agent consensus engine (dry-run, no trade committed)
+ */
+export const getGetTraderDecisionUrl = () => {
+  return `/api/trader/decision`;
+};
+
+export const getTraderDecision = async (
+  options?: RequestInit,
+): Promise<ConsensusVerdict> => {
+  return customFetch<ConsensusVerdict>(getGetTraderDecisionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderDecisionQueryKey = () => {
+  return [`/api/trader/decision`] as const;
+};
+
+export const getGetTraderDecisionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderDecision>>,
+  TError = ErrorType<ErrorBody>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderDecision>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderDecisionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTraderDecision>>
+  > = ({ signal }) => getTraderDecision({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderDecision>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderDecisionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderDecision>>
+>;
+export type GetTraderDecisionQueryError = ErrorType<ErrorBody>;
+
+/**
+ * @summary Run multi-agent consensus engine (dry-run, no trade committed)
+ */
+
+export function useGetTraderDecision<
+  TData = Awaited<ReturnType<typeof getTraderDecision>>,
+  TError = ErrorType<ErrorBody>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderDecision>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderDecisionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Ingest a Bookmap/heatmap frame for the Vision Agent
+ */
+export const getIngestTraderFrameUrl = () => {
+  return `/api/trader/ingest/frame`;
+};
+
+export const ingestTraderFrame = async (
+  frameIngestRequest: FrameIngestRequest,
+  options?: RequestInit,
+): Promise<IngestFrameResult> => {
+  return customFetch<IngestFrameResult>(getIngestTraderFrameUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(frameIngestRequest),
+  });
+};
+
+export const getIngestTraderFrameMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof ingestTraderFrame>>,
+    TError,
+    { data: BodyType<FrameIngestRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof ingestTraderFrame>>,
+  TError,
+  { data: BodyType<FrameIngestRequest> },
+  TContext
+> => {
+  const mutationKey = ["ingestTraderFrame"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof ingestTraderFrame>>,
+    { data: BodyType<FrameIngestRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return ingestTraderFrame(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type IngestTraderFrameMutationResult = NonNullable<
+  Awaited<ReturnType<typeof ingestTraderFrame>>
+>;
+export type IngestTraderFrameMutationBody = BodyType<FrameIngestRequest>;
+export type IngestTraderFrameMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Ingest a Bookmap/heatmap frame for the Vision Agent
+ */
+export const useIngestTraderFrame = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof ingestTraderFrame>>,
+    TError,
+    { data: BodyType<FrameIngestRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof ingestTraderFrame>>,
+  TError,
+  { data: BodyType<FrameIngestRequest> },
+  TContext
+> => {
+  return useMutation(getIngestTraderFrameMutationOptions(options));
 };
 
 /**
