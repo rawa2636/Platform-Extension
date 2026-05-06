@@ -8,6 +8,7 @@
 import type { ConsensusGuardedAgent } from "./consensusGuardedAgent";
 import type { ConsensusThresholds } from "./consensusThresholds";
 import type { ConsensusVerdictVerdict } from "./consensusVerdictVerdict";
+import type { EntryZone } from "./entryZone";
 
 export interface ConsensusVerdict {
   verdict: ConsensusVerdictVerdict;
@@ -19,6 +20,7 @@ export interface ConsensusVerdict {
   llmAgreeCount: number;
   blockReason?: string | null;
   computedAt: Date;
+  entryZone?: EntryZone | null;
   thresholds?: ConsensusThresholds;
   agents: ConsensusGuardedAgent[];
 }

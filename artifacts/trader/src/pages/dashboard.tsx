@@ -293,9 +293,51 @@ export default function Dashboard() {
                   })}
                 </div>
 
+                {/* Entry Zone — always shown when computed */}
+                {decisionData.entryZone && (() => {
+                  const ez = decisionData.entryZone!;
+                  const isBuy = ez.direction === "BUY";
+                  return (
+                    <div className={`rounded-lg border-2 p-4 ${isBuy ? "border-emerald-500/50 bg-emerald-500/5" : "border-destructive/50 bg-destructive/5"}`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Target className={`h-4 w-4 ${isBuy ? "text-emerald-400" : "text-destructive"}`} />
+                          <span className="text-sm font-semibold">منطقة الدخول المثلى (SL≤30 نقطة)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className={isBuy ? "bg-emerald-600 text-white" : "bg-destructive text-white"}>
+                            {isBuy ? "شراء" : "بيع"}
+                          </Badge>
+                          <Badge variant="outline" className="font-mono text-xs">{ez.levelType}</Badge>
+                          <Badge variant="outline" className="font-mono text-xs text-primary">R:R {ez.riskReward}</Badge>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="text-center p-2 rounded bg-background/50 border border-border">
+                          <div className="text-[10px] text-muted-foreground mb-1">دخول</div>
+                          <div className="text-base font-bold font-mono text-foreground">{ez.entry.toFixed(2)}</div>
+                        </div>
+                        <div className="text-center p-2 rounded bg-background/50 border border-destructive/30">
+                          <div className="text-[10px] text-muted-foreground mb-1">وقف الخسارة ({ez.slPips} نقطة)</div>
+                          <div className="text-base font-bold font-mono text-destructive">{ez.stopLoss.toFixed(2)}</div>
+                        </div>
+                        <div className="text-center p-2 rounded bg-background/50 border border-emerald-500/30">
+                          <div className="text-[10px] text-muted-foreground mb-1">هدف ({ez.tpPips} نقطة)</div>
+                          <div className="text-base font-bold font-mono text-emerald-400">{ez.takeProfit.toFixed(2)}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-[10px] text-muted-foreground font-mono text-center">
+                        مصدر التحليل: {ez.source} | ثقة المستوى: {(ez.confidence * 100).toFixed(0)}%
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {decisionData.blockReason && (
-                  <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded p-2 font-mono">
-                    {decisionData.blockReason}
+                  <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded p-3 font-mono leading-relaxed">
+                    {decisionData.blockReason.split(";").map((r, i) => (
+                      <div key={i} className="flex gap-1"><span className="opacity-50">—</span><span>{r.trim()}</span></div>
+                    ))}
                   </div>
                 )}
               </div>

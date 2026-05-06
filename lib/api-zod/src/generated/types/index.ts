@@ -18,6 +18,8 @@ export * from "./consensusThresholds";
 export * from "./consensusVerdict";
 export * from "./consensusVerdictVerdict";
 export * from "./cycleRunResult";
+export * from "./entryZone";
+export * from "./entryZoneDirection";
 export * from "./error";
 export * from "./errorBody";
 export * from "./frameIngestCluster";

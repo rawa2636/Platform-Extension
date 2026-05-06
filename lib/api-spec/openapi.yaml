@@ -1380,6 +1380,22 @@ components:
           $ref: "#/components/schemas/ConsensusGuardResult"
       required: [output, guard]
 
+    EntryZone:
+      type: object
+      description: Optimal entry zone found by the consensus engine (SL ≤ 30 pips, TP 300–500 pips)
+      properties:
+        direction:   { type: string, enum: [BUY, SELL] }
+        entry:       { type: number, description: "Entry price" }
+        stopLoss:    { type: number, description: "Stop loss price" }
+        takeProfit:  { type: number, description: "Take profit price" }
+        slPips:      { type: integer, description: "Stop loss distance in pips ($1 per pip for XAU/USD)" }
+        tpPips:      { type: integer, description: "Take profit distance in pips" }
+        riskReward:  { type: number, description: "R:R ratio (tpPips / slPips)" }
+        levelType:   { type: string, description: "Key level that defines the trade (e.g. Fib_0.618, Psych_4600)" }
+        confidence:  { type: number, description: "Level weight/confidence 0–1" }
+        source:      { type: string, description: "Which agent computed this zone" }
+      required: [direction, entry, stopLoss, takeProfit, slPips, tpPips, riskReward, levelType, confidence, source]
+
     ConsensusVerdict:
       type: object
       properties:
@@ -1392,6 +1408,10 @@ components:
         llmAgreeCount: { type: integer }
         blockReason: { type: string, nullable: true }
         computedAt: { type: string, format: date-time }
+        entryZone:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/EntryZone"
         thresholds:
           $ref: "#/components/schemas/ConsensusThresholds"
         agents:

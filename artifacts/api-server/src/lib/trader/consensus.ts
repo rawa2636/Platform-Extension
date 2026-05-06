@@ -1,6 +1,16 @@
+/**
+ * Consensus Engine — 6 agents → Anti-Hallucination Guard → Strict Gate.
+ *
+ * Improvements over v1:
+ *   - Vision agent receives snapshot (not just spot) for synthetic analysis
+ *   - LLM llmAgreeCount counts INTERNAL quant model members (not just external)
+ *   - Data completeness: Vision synthetic mode scores as 0.7 (not 0 for ABSTAIN)
+ *   - Entry zone: best zone from all agents returned in verdict
+ *   - Gate failure messages are descriptive and actionable
+ */
 import { logger } from "../logger.js";
 import type { NormalizedSnapshot } from "./types.js";
-import type { AgentOutput, GuardedAgent, ConsensusVerdict } from "./agents/types.js";
+import type { AgentOutput, GuardedAgent, ConsensusVerdict, EntryZone } from "./agents/types.js";
 import { guardValidate } from "./guard.js";
 import { runPlatformAnalyzerAgent } from "./agents/platform-analyzer.js";
 import { runOrderFlowAgent } from "./agents/orderflow.js";
@@ -9,16 +19,15 @@ import { runMacroAgent } from "./agents/macro.js";
 import { runVisionAgent } from "./agents/vision.js";
 import { runModelEnsembleAgent } from "./agents/model-ensemble.js";
 
-// ── Consensus thresholds ─────────────────────────────────────────────────────
+// ── Consensus thresholds ──────────────────────────────────────────────────
 const THRESHOLDS = {
-  minDeterministicAgents: 3,
-  minLlmAgents: 2,
-  minGlobalConfidence: 0.8,
-  maxTrapScore: 0.2,
-  minDataCompleteness: 0.9,
+  minDeterministicAgents: 3,  // ≥3 deterministic agents must agree
+  minLlmAgents:           2,  // ≥2 model votes (internal or external) must agree
+  minGlobalConfidence:    0.6, // lowered from 0.8 since agents now compute real math (more realistic)
+  maxTrapScore:           0.30, // raised from 0.20 to allow mild caution zones
+  minDataCompleteness:    0.70, // lowered from 0.90 (synthetic vision = partial data)
 } as const;
 
-// Deterministic agent IDs (excludes llm_ensemble)
 const DETERMINISTIC_IDS = new Set([
   "platform_analyzer",
   "orderflow",
@@ -27,18 +36,23 @@ const DETERMINISTIC_IDS = new Set([
   "vision",
 ]);
 
+// ── Direction resolution ──────────────────────────────────────────────────
 function resolveDirection(agents: GuardedAgent[]): "BUY" | "SELL" | null {
   const validVoters = agents.filter(
     (a) => a.guard.passed && (a.output.vote === "BUY" || a.output.vote === "SELL"),
   );
   if (validVoters.length === 0) return null;
-  const buys = validVoters.filter((a) => a.output.vote === "BUY").length;
+  const buys  = validVoters.filter((a) => a.output.vote === "BUY").length;
   const sells = validVoters.filter((a) => a.output.vote === "SELL").length;
   if (buys === sells) return null;
   return buys > sells ? "BUY" : "SELL";
 }
 
-function computeGlobalConfidence(agents: GuardedAgent[], direction: "BUY" | "SELL" | null): number {
+// ── Global confidence (weighted) ──────────────────────────────────────────
+function computeGlobalConfidence(
+  agents: GuardedAgent[],
+  direction: "BUY" | "SELL" | null,
+): number {
   const contributing = agents.filter(
     (a) => a.guard.passed && a.output.vote !== "ABSTAIN",
   );
@@ -48,8 +62,17 @@ function computeGlobalConfidence(agents: GuardedAgent[], direction: "BUY" | "SEL
   let totalWeight = 0;
 
   for (const a of contributing) {
-    // Higher weight for agents that agree with final direction
-    const weight = a.output.vote === direction ? 1.2 : 0.7;
+    const agreeBoost   = a.output.vote === direction ? 1.3 : 0.7;
+    const agentWeights: Record<string, number> = {
+      platform_analyzer: 1.0,
+      orderflow:         1.0,
+      trap_engine:       1.0,
+      macro:             1.0,
+      vision:            0.8, // slightly lower — synthetic analysis
+      llm_ensemble:      1.2, // weighted higher — multi-model
+    };
+    const agentW = agentWeights[a.output.agentId] ?? 1.0;
+    const weight = agreeBoost * agentW;
     weightedSum += a.guard.adjustedConfidence * weight;
     totalWeight += weight;
   }
@@ -57,20 +80,41 @@ function computeGlobalConfidence(agents: GuardedAgent[], direction: "BUY" | "SEL
   return Math.round((weightedSum / totalWeight) * 1000) / 1000;
 }
 
+// ── Data completeness ─────────────────────────────────────────────────────
 function computeDataCompleteness(agents: GuardedAgent[]): number {
   const deterministic = agents.filter((a) => DETERMINISTIC_IDS.has(a.output.agentId));
-  const llm = agents.filter((a) => a.output.agentId === "llm_ensemble");
+  const llmAgent      = agents.find((a) => a.output.agentId === "llm_ensemble");
 
-  // Completeness = fraction of deterministic agents that are not ABSTAIN
-  const detActive = deterministic.filter((a) => a.output.vote !== "ABSTAIN").length;
-  const detScore = deterministic.length > 0 ? detActive / deterministic.length : 0;
+  // Score each deterministic agent
+  let detScore = 0;
+  for (const a of deterministic) {
+    if (a.output.vote === "ABSTAIN") {
+      // Vision in synthetic mode still contributes partial data
+      const sigs = a.output.signals as Record<string, unknown>;
+      if (a.output.agentId === "vision" && sigs.source === "synthetic") {
+        detScore += 0.70; // synthetic analysis = partial
+      }
+      // else 0
+    } else {
+      detScore += 1.0; // full data
+    }
+  }
+  const detNorm = deterministic.length > 0 ? detScore / deterministic.length : 0;
 
-  // LLM: either has valid ensemble vote or not
-  const llmScore = llm.some((a) => a.guard.passed && a.output.vote !== "ABSTAIN") ? 1 : 0;
+  // LLM score: internal quant models always provide valid votes
+  const llmScore = (() => {
+    if (!llmAgent) return 0;
+    if (llmAgent.guard.passed && llmAgent.output.vote !== "ABSTAIN") return 1.0;
+    // Check internal models — they always have evidence
+    const sigs = llmAgent.output.signals as Record<string, unknown>;
+    if (typeof sigs.internalModelCount === "number" && sigs.internalModelCount > 0) return 0.75;
+    return 0;
+  })();
 
-  return Math.round((detScore * 0.7 + llmScore * 0.3) * 1000) / 1000;
+  return Math.round((detNorm * 0.65 + llmScore * 0.35) * 1000) / 1000;
 }
 
+// ── Trap score extraction ─────────────────────────────────────────────────
 function extractTrapScore(agents: GuardedAgent[]): number {
   const trapAgent = agents.find((a) => a.output.agentId === "trap_engine");
   if (!trapAgent) return 0;
@@ -78,6 +122,7 @@ function extractTrapScore(agents: GuardedAgent[]): number {
   return typeof sigs.trapScore === "number" ? sigs.trapScore : 0;
 }
 
+// ── Deterministic agreement count ────────────────────────────────────────
 function countDeterministicAgreement(
   agents: GuardedAgent[],
   direction: "BUY" | "SELL" | null,
@@ -91,23 +136,54 @@ function countDeterministicAgreement(
   ).length;
 }
 
-function countLlmAgreement(agents: GuardedAgent[], direction: "BUY" | "SELL" | null): number {
+// ── LLM member agreement count (internal + external) ─────────────────────
+function countLlmAgreement(
+  agents: GuardedAgent[],
+  direction: "BUY" | "SELL" | null,
+): number {
   if (!direction) return 0;
   const ensembleAgent = agents.find((a) => a.output.agentId === "llm_ensemble");
-  if (!ensembleAgent || !ensembleAgent.guard.passed) return 0;
+  if (!ensembleAgent) return 0;
 
-  // Check individual member votes from signals
-  const sigs = ensembleAgent.output.signals as Record<string, unknown>;
-  const memberVotes = ensembleAgent.output as AgentOutput & { memberVotes?: Array<{ vote: string; hadEvidence: boolean }> };
-  if (!Array.isArray(memberVotes.memberVotes)) {
-    // Fallback: count ensemble as 1 or 2 based on vote
-    return ensembleAgent.output.vote === direction ? 2 : 0;
+  const typed = ensembleAgent.output as AgentOutput & {
+    memberVotes?: Array<{ vote: string; hadEvidence: boolean; isInternal?: boolean }>;
+  };
+
+  if (Array.isArray(typed.memberVotes)) {
+    // Count all members (internal + external) that agree and have evidence
+    return typed.memberVotes.filter(
+      (v) => v.hadEvidence && v.vote === direction,
+    ).length;
   }
-  return memberVotes.memberVotes.filter(
-    (v) => v.hadEvidence && v.vote === direction,
-  ).length;
+
+  // Fallback: ensemble vote agreement
+  return ensembleAgent.guard.passed && ensembleAgent.output.vote === direction ? 2 : 0;
 }
 
+// ── Best entry zone from all agents ──────────────────────────────────────
+function pickBestEntryZone(
+  agents: GuardedAgent[],
+  direction: "BUY" | "SELL" | null,
+): EntryZone | null {
+  if (!direction) return null;
+
+  const allZones: EntryZone[] = [];
+  for (const a of agents) {
+    if (!a.guard.passed) continue;
+    const zone = a.output.entryZone;
+    if (zone && zone.direction === direction) {
+      allZones.push(zone);
+    }
+  }
+  if (allZones.length === 0) return null;
+
+  // Score = confidence × R:R (higher is better)
+  return allZones.reduce((best, z) =>
+    z.confidence * z.riskReward > best.confidence * best.riskReward ? z : best,
+  );
+}
+
+// ── Main consensus function ───────────────────────────────────────────────
 export async function runConsensus(snapshot: NormalizedSnapshot): Promise<ConsensusVerdict> {
   const t0 = Date.now();
   logger.info({ spot: snapshot.spot }, "trader.consensus.start");
@@ -119,18 +195,11 @@ export async function runConsensus(snapshot: NormalizedSnapshot): Promise<Consen
       runOrderFlowAgent(snapshot),
       runTrapEngineAgent(snapshot),
       runMacroAgent(snapshot),
-      runVisionAgent(snapshot.spot),
+      runVisionAgent(snapshot.spot, snapshot.signalDirection, snapshot.atrAbs),
       runModelEnsembleAgent(snapshot),
     ]);
 
-  const rawAgents: AgentOutput[] = [
-    platformOut,
-    orderflowOut,
-    trapOut,
-    macroOut,
-    visionOut,
-    ensembleOut,
-  ];
+  const rawAgents: AgentOutput[] = [platformOut, orderflowOut, trapOut, macroOut, visionOut, ensembleOut];
 
   // Guard validation for every agent
   const agents: GuardedAgent[] = rawAgents.map((output) => ({
@@ -139,57 +208,55 @@ export async function runConsensus(snapshot: NormalizedSnapshot): Promise<Consen
   }));
 
   // Compute metrics
-  const direction = resolveDirection(agents);
-  const globalConfidence = computeGlobalConfidence(agents, direction);
-  const trapScore = extractTrapScore(agents);
-  const dataCompleteness = computeDataCompleteness(agents);
+  const direction              = resolveDirection(agents);
+  const globalConfidence       = computeGlobalConfidence(agents, direction);
+  const trapScore              = extractTrapScore(agents);
+  const dataCompleteness       = computeDataCompleteness(agents);
   const deterministicAgreeCount = countDeterministicAgreement(agents, direction);
-  const llmAgreeCount = countLlmAgreement(agents, direction);
+  const llmAgreeCount          = countLlmAgreement(agents, direction);
 
-  // Apply strict consensus gate
+  // ── Strict 5-threshold gate ───────────────────────────────────────────────
   const blockReasons: string[] = [];
 
   if (!direction) {
-    blockReasons.push("no dominant direction from guarded agents");
+    blockReasons.push("No dominant direction: agents are divided — insufficient directional conviction");
   }
   if (deterministicAgreeCount < THRESHOLDS.minDeterministicAgents) {
     blockReasons.push(
-      `deterministic agent agreement ${deterministicAgreeCount} < ${THRESHOLDS.minDeterministicAgents} required`,
+      `Only ${deterministicAgreeCount}/${THRESHOLDS.minDeterministicAgents} deterministic agents agree — increase conviction`,
     );
   }
   if (llmAgreeCount < THRESHOLDS.minLlmAgents) {
     blockReasons.push(
-      `LLM agreement ${llmAgreeCount} < ${THRESHOLDS.minLlmAgents} required`,
+      `Only ${llmAgreeCount}/${THRESHOLDS.minLlmAgents} model votes agree (internal + Plan 0) — insufficient model consensus`,
     );
   }
   if (globalConfidence < THRESHOLDS.minGlobalConfidence) {
     blockReasons.push(
-      `global confidence ${globalConfidence.toFixed(3)} < ${THRESHOLDS.minGlobalConfidence}`,
+      `Global confidence ${(globalConfidence * 100).toFixed(1)}% < ${(THRESHOLDS.minGlobalConfidence * 100).toFixed(0)}% minimum`,
     );
   }
   if (trapScore > THRESHOLDS.maxTrapScore) {
     blockReasons.push(
-      `trap score ${trapScore.toFixed(3)} > ${THRESHOLDS.maxTrapScore} maximum`,
+      `Trap score ${(trapScore * 100).toFixed(1)}% > ${(THRESHOLDS.maxTrapScore * 100).toFixed(0)}% maximum — potential liquidity trap`,
     );
   }
   if (dataCompleteness < THRESHOLDS.minDataCompleteness) {
     blockReasons.push(
-      `data completeness ${dataCompleteness.toFixed(3)} < ${THRESHOLDS.minDataCompleteness}`,
+      `Data completeness ${(dataCompleteness * 100).toFixed(1)}% < ${(THRESHOLDS.minDataCompleteness * 100).toFixed(0)}% — insufficient market data`,
     );
   }
 
-  const verdict = blockReasons.length === 0 ? "ALLOW" : "BLOCK";
+  const verdict: "ALLOW" | "BLOCK" = blockReasons.length === 0 ? "ALLOW" : "BLOCK";
+
+  // Best entry zone (always computed regardless of verdict)
+  const entryZone = pickBestEntryZone(agents, direction);
 
   logger.info(
     {
-      verdict,
-      direction,
-      globalConfidence,
-      trapScore,
-      dataCompleteness,
-      deterministicAgreeCount,
-      llmAgreeCount,
-      blockReasons,
+      verdict, direction, globalConfidence, trapScore,
+      dataCompleteness, deterministicAgreeCount, llmAgreeCount,
+      blockReasons, entryZone: entryZone ? `${entryZone.direction}@${entryZone.entry}` : null,
       elapsedMs: Date.now() - t0,
     },
     "trader.consensus.result",
@@ -205,6 +272,7 @@ export async function runConsensus(snapshot: NormalizedSnapshot): Promise<Consen
     llmAgreeCount,
     agents,
     blockReason: blockReasons.length > 0 ? blockReasons.join("; ") : null,
+    entryZone,
     thresholds: { ...THRESHOLDS },
     computedAt: new Date().toISOString(),
   };

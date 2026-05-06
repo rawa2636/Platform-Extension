@@ -499,6 +499,39 @@ export interface ConsensusGuardedAgent {
   guard: ConsensusGuardResult;
 }
 
+export type EntryZoneDirection =
+  (typeof EntryZoneDirection)[keyof typeof EntryZoneDirection];
+
+export const EntryZoneDirection = {
+  BUY: "BUY",
+  SELL: "SELL",
+} as const;
+
+/**
+ * Optimal entry zone found by the consensus engine (SL ≤ 30 pips, TP 300–500 pips)
+ */
+export interface EntryZone {
+  direction: EntryZoneDirection;
+  /** Entry price */
+  entry: number;
+  /** Stop loss price */
+  stopLoss: number;
+  /** Take profit price */
+  takeProfit: number;
+  /** Stop loss distance in pips ($1 per pip for XAU/USD) */
+  slPips: number;
+  /** Take profit distance in pips */
+  tpPips: number;
+  /** R:R ratio (tpPips / slPips) */
+  riskReward: number;
+  /** Key level that defines the trade (e.g. Fib_0.618, Psych_4600) */
+  levelType: string;
+  /** Level weight/confidence 0–1 */
+  confidence: number;
+  /** Which agent computed this zone */
+  source: string;
+}
+
 export type ConsensusVerdictVerdict =
   (typeof ConsensusVerdictVerdict)[keyof typeof ConsensusVerdictVerdict];
 
@@ -517,6 +550,7 @@ export interface ConsensusVerdict {
   llmAgreeCount: number;
   blockReason?: string | null;
   computedAt: string;
+  entryZone?: EntryZone | null;
   thresholds?: ConsensusThresholds;
   agents: ConsensusGuardedAgent[];
 }

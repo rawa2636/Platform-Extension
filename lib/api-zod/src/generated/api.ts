@@ -932,6 +932,29 @@ export const GetTraderDecisionResponse = zod.object({
   llmAgreeCount: zod.number(),
   blockReason: zod.string().nullish(),
   computedAt: zod.coerce.date(),
+  entryZone: zod
+    .object({
+      direction: zod.enum(["BUY", "SELL"]),
+      entry: zod.number().describe("Entry price"),
+      stopLoss: zod.number().describe("Stop loss price"),
+      takeProfit: zod.number().describe("Take profit price"),
+      slPips: zod
+        .number()
+        .describe("Stop loss distance in pips ($1 per pip for XAU\/USD)"),
+      tpPips: zod.number().describe("Take profit distance in pips"),
+      riskReward: zod.number().describe("R:R ratio (tpPips \/ slPips)"),
+      levelType: zod
+        .string()
+        .describe(
+          "Key level that defines the trade (e.g. Fib_0.618, Psych_4600)",
+        ),
+      confidence: zod.number().describe("Level weight\/confidence 0–1"),
+      source: zod.string().describe("Which agent computed this zone"),
+    })
+    .describe(
+      "Optimal entry zone found by the consensus engine (SL ≤ 30 pips, TP 300–500 pips)",
+    )
+    .nullish(),
   thresholds: zod
     .object({
       minDeterministicAgents: zod.number(),

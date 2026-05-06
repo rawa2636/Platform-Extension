@@ -1,3 +1,6 @@
+import type { EntryZone } from "./quant-math.js";
+export type { EntryZone } from "./quant-math.js";
+
 export type AgentVote = "BUY" | "SELL" | "NEUTRAL" | "ABSTAIN";
 export type AgentId =
   | "platform_analyzer"
@@ -21,6 +24,7 @@ export interface AgentOutput {
   evidence: AgentEvidence;
   reasoning: string;
   signals: Record<string, unknown>;
+  entryZone: EntryZone | null;
   latencyMs: number;
 }
 
@@ -47,6 +51,7 @@ export interface ConsensusVerdict {
   llmAgreeCount: number;
   agents: GuardedAgent[];
   blockReason: string | null;
+  entryZone: EntryZone | null;
   thresholds: {
     minDeterministicAgents: number;
     minLlmAgents: number;
