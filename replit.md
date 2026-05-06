@@ -111,16 +111,23 @@ Paper-trading control room for a single operator on XAU/USD. Consumes a real-tim
 - `executor.ts` — full cycle: snapshot → exit-check → **consensus engine** → risk rules → sizing → AUTO/MANUAL/REJECT
 - `scheduler.ts` — auto-loop on the active mode's interval (DAILY 300s, MID 180s)
 
+### Trade Geometry (quant-math.ts)
+- **Entry AT key level**: Fibonacci / pivot / psych round numbers
+- **SL = $2–4** beyond the level (SL_BEYOND_LEVEL=$2.50, buffer=$0.30 → total SL ≈ $2.80)
+- **TP = $30–60** from entry (clamped to MIN_TP_PIPS=30, MAX_TP_PIPS=60)
+- **Minimum R:R = 10:1** (typical output ~15:1)
+- Scan window: 1.5×ATR around spot for nearest actionable level
+
 ### Multi-Agent Consensus Engine (`artifacts/api-server/src/lib/trader/`)
-6 specialized agents run in parallel → Anti-Hallucination Guard → Strict Consensus (5 gates):
-- **agents/platform-analyzer.ts** — trend, structure, momentum from snapshot
-- **agents/orderflow.ts** — buy/sell pressure, institutional footprint, bid/ask imbalance
-- **agents/trap-engine.ts** — detects bull/bear traps, stop hunts (feeds trapScore gate)
-- **agents/macro.ts** — COT, DXY correlation, macro regime alignment
-- **agents/vision.ts** — in-memory ring buffer (10 frames, 5min TTL) of Bookmap clusters; POST `/api/trader/ingest/frame`
-- **agents/model-ensemble.ts** — queries top 5 Plan 0 ACTIVE chat models from `models` table; requires structured evidence in LLM JSON response; ABSTAIN if non-conforming
-- **guard.ts** — per-agent: evidence validation, confidence ≥0.35, keyword cross-check, penalty scoring → adjustedConfidence
-- **consensus.ts** — 5-threshold gate: deterministicAgents ≥3, llmAgents ≥2, globalConfidence ≥0.8, trapScore ≤0.2, dataCompleteness ≥0.9; ALLOW or BLOCK with blockReason
+6 specialized agents run in parallel → Anti-Hallucination Guard → Consensus (5 gates):
+- **agents/platform-analyzer.ts** — Fibonacci + pivots + psych levels + structural trend
+- **agents/orderflow.ts** — buy/sell pressure, institutional delta (vote threshold $0.04)
+- **agents/trap-engine.ts** — trap detection; votes WITH signal if trapScore ≤ 0.30
+- **agents/macro.ts** — COT, DXY, VIX, yield; falls back to COT+signal when macro unavailable
+- **agents/vision.ts** — Bookmap ring buffer (10 frames, 5min TTL); synthetic heatmap when no frames (never ABSTAINs); YouTube URLs stored in dashboard localStorage
+- **agents/model-ensemble.ts** — 3 internal quant models (always run) + Plan 0 ACTIVE LLMs
+- **guard.ts** — evidence validation, confidence ≥0.35, adjustedConfidence scoring
+- **consensus.ts** — thresholds: deterministicAgents ≥3, llmAgents ≥2, globalConfidence ≥0.60, trapScore ≤0.30, dataCompleteness ≥0.70; returns `entryZone` (entry/SL/TP/R:R) on ALLOW
 
 ### Routes (in `artifacts/api-server/src/routes/trader.ts`)
 - `GET /api/trader/account` / `POST /api/trader/account/reset`

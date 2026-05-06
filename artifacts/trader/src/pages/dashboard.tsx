@@ -1,14 +1,16 @@
 import { useGetTraderDashboard, useGetTraderDecision, getGetTraderDashboardQueryKey, getGetTraderDecisionQueryKey } from "@workspace/api-client-react";
-import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis, RadialBarChart, RadialBar, Cell } from "recharts";
+import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, formatPercent, formatPrice, formatTimeAbsolute, formatUnits } from "@/lib/format";
 import { PnlDisplay, DirectionBadge, StatusBadge } from "@/components/ui-patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, ArrowUpRight, TrendingUp, Clock, AlertTriangle, Zap, Shield, Target, Cpu, Brain, Activity, Eye, ShieldCheck, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { AlertCircle, ArrowUpRight, TrendingUp, AlertTriangle, Target, Cpu, Brain, Activity, Eye, ShieldCheck, CheckCircle2, XCircle, RefreshCw, PlayCircle, Plus, Trash2, Zap, Shield, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { motion, type Variants } from "framer-motion";
 import { Link } from "wouter";
+import { useState, useEffect, useRef } from "react";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -41,6 +43,31 @@ const AGENT_LABELS: Record<string, string> = {
   llm_ensemble: "نماذج LLM (Plan 0)",
 };
 
+// ── Bookmap YouTube helpers ────────────────────────────────────────────────
+const BOOKMAP_STORAGE_KEY = "bookmap_youtube_urls";
+
+function extractYouTubeId(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (u.hostname.includes("youtube.com")) {
+      // live?v=ID or watch?v=ID
+      return u.searchParams.get("v");
+    }
+    if (u.hostname === "youtu.be") {
+      return u.pathname.slice(1).split("?")[0] || null;
+    }
+  } catch {/* invalid URL */}
+  return null;
+}
+
+function loadBookmapUrls(): string[] {
+  try {
+    const raw = localStorage.getItem(BOOKMAP_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as string[]) : [];
+  } catch { return []; }
+}
+
+// ── Component ──────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { data, isLoading, error } = useGetTraderDashboard({
     query: { queryKey: getGetTraderDashboardQueryKey(), refetchInterval: 8000 }
@@ -57,6 +84,29 @@ export default function Dashboard() {
       staleTime: 0,
     }
   });
+
+  // Bookmap YouTube state
+  const [bookmapUrls, setBookmapUrls] = useState<string[]>(loadBookmapUrls);
+  const [newUrl, setNewUrl] = useState("");
+  const [urlError, setUrlError] = useState("");
+  const newUrlRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem(BOOKMAP_STORAGE_KEY, JSON.stringify(bookmapUrls));
+  }, [bookmapUrls]);
+
+  function addBookmapUrl() {
+    const id = extractYouTubeId(newUrl);
+    if (!id) { setUrlError("رابط YouTube غير صالح"); return; }
+    if (bookmapUrls.includes(newUrl.trim())) { setUrlError("الرابط مضاف بالفعل"); return; }
+    setBookmapUrls(prev => [...prev, newUrl.trim()]);
+    setNewUrl("");
+    setUrlError("");
+  }
+
+  function removeBookmapUrl(url: string) {
+    setBookmapUrls(prev => prev.filter(u => u !== url));
+  }
 
   if (isLoading) {
     return (
@@ -461,6 +511,88 @@ export default function Dashboard() {
           </Card>
         </motion.div>
       </div>
+
+      {/* ── Bookmap YouTube Streams ─────────────────────────────────────────── */}
+      <motion.div variants={itemVariants}>
+        <Card className="border border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <PlayCircle className="h-5 w-5 text-primary" />
+                بث Bookmap المباشر (YouTube)
+              </div>
+              <span className="text-xs text-muted-foreground font-normal">
+                {bookmapUrls.length === 0 ? "أضف رابط بث Bookmap لمتابعة هيت ماب السيولة" : `${bookmapUrls.length} بث مُضاف`}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* URL input row */}
+            <div className="flex gap-2 items-start">
+              <div className="flex-1">
+                <Input
+                  ref={newUrlRef}
+                  value={newUrl}
+                  onChange={e => { setNewUrl(e.target.value); setUrlError(""); }}
+                  onKeyDown={e => e.key === "Enter" && addBookmapUrl()}
+                  placeholder="https://www.youtube.com/watch?v=...  أو  https://youtu.be/..."
+                  className={`font-mono text-sm direction-ltr text-left ${urlError ? "border-destructive" : ""}`}
+                  dir="ltr"
+                />
+                {urlError && <p className="text-xs text-destructive mt-1">{urlError}</p>}
+              </div>
+              <Button onClick={addBookmapUrl} size="sm" className="gap-1 shrink-0">
+                <Plus className="w-4 h-4" />
+                إضافة
+              </Button>
+            </div>
+
+            {bookmapUrls.length === 0 && (
+              <div className="text-center py-8 border border-dashed border-border rounded-lg">
+                <PlayCircle className="h-10 w-10 mx-auto mb-2 opacity-20" />
+                <p className="text-sm text-muted-foreground">لا توجد بثوث مُضافة</p>
+                <p className="text-xs text-muted-foreground mt-1 opacity-60">الصق رابط بث Bookmap على YouTube في الحقل أعلاه</p>
+              </div>
+            )}
+
+            {/* Video grid */}
+            {bookmapUrls.length > 0 && (
+              <div className={`grid gap-4 ${bookmapUrls.length === 1 ? "grid-cols-1" : bookmapUrls.length === 2 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 lg:grid-cols-2 xl:grid-cols-3"}`}>
+                {bookmapUrls.map((url) => {
+                  const videoId = extractYouTubeId(url);
+                  return (
+                    <div key={url} className="relative group">
+                      <div className="aspect-video rounded-lg overflow-hidden bg-black border border-border">
+                        {videoId ? (
+                          <iframe
+                            src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=0&rel=0&modestbranding=1`}
+                            className="w-full h-full"
+                            allowFullScreen
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            title={`Bookmap Stream ${videoId}`}
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">رابط غير صالح</div>
+                        )}
+                      </div>
+                      <div className="mt-1 flex items-center justify-between px-1">
+                        <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[80%]" dir="ltr">{videoId}</span>
+                        <button
+                          onClick={() => removeBookmapUrl(url)}
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          title="حذف"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </motion.div>
 
       {/* Signals & Positions Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

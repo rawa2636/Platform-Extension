@@ -1,14 +1,22 @@
 /**
  * Quantitative math primitives for XAU/USD institutional analysis.
- * Convention: 1 pip = $1.00 for XAU/USD (institutional large-move convention).
- * SL target ≤ 30 pips ($30), TP target 300–500 pips ($300–$500).
+ * Convention: 1 pip = $1.00 for XAU/USD.
+ *
+ * Trade geometry:
+ *   - Entry AT the key level (support or resistance)
+ *   - SL placed $2–4 BEYOND the level (not $30+)
+ *   - TP = $30–60 from entry
+ *   - Minimum R:R = 10 (e.g. $3 SL → $30 TP = 10:1)
  */
 
-export const GOLD_PIP = 1.0;
-export const MAX_SL_PIPS = 30;
-export const MIN_TP_PIPS = 300;
-export const MAX_TP_PIPS = 500;
-export const SL_LEVEL_BUFFER = 5; // pips of buffer inside the key level for SL placement
+export const GOLD_PIP = 1.0;          // $1 per pip
+export const MAX_SL_PIPS = 4;         // $4 max stop loss beyond level
+export const MIN_SL_PIPS = 1.5;       // $1.50 min stop loss
+export const MIN_TP_PIPS = 30;        // $30 minimum target
+export const MAX_TP_PIPS = 60;        // $60 maximum target
+export const SL_LEVEL_BUFFER = 0.30;  // $0.30 inside the level for entry
+export const SL_BEYOND_LEVEL = 2.50;  // $2.50 beyond the level for SL
+export const MIN_RR = 10;             // minimum risk-reward ratio
 
 export interface PriceLevel {
   price: number;
@@ -91,10 +99,20 @@ export function roundNumberLevels(price: number, radiusPips = 400): PriceLevel[]
 }
 
 /**
- * Scan key levels for valid entry zones:
- *   SL ≤ 30 pips, TP = 300–500 pips, minimum R:R ≥ 10.
- * For BUY: support levels at or below spot.
- * For SELL: resistance levels at or above spot.
+ * Institutional entry zone scanner.
+ *
+ * Geometry (matching user requirement):
+ *   BUY  at support: entry = level + $0.30 buffer
+ *                    SL    = level − $2.50           → slPips ≈ $2.80
+ *                    TP    = entry + $30–60           → R:R ≈ 10–20:1
+ *
+ *   SELL at resistance: entry = level − $0.30
+ *                       SL    = level + $2.50
+ *                       TP    = entry − $30–60
+ *
+ * Scans levels within 1.5×ATR of spot so the panel shows
+ * the NEAREST actionable level (may be slightly above/below spot —
+ * price will reach it naturally, and the trade is pre-planned).
  */
 export function scanEntryZones(
   spot: number,
@@ -103,66 +121,80 @@ export function scanEntryZones(
   levels: PriceLevel[],
   source = "quant",
 ): EntryZone[] {
-  const pip = GOLD_PIP;
-  const buf = SL_LEVEL_BUFFER * pip;
   const results: EntryZone[] = [];
+  // Search window: 1.5× ATR each side (gold ATR ~$12, window ±$18)
+  const window = Math.max(atrAbs * 1.5, 20);
 
   for (const level of levels) {
+    const dist = level.price - spot; // positive = above spot
+
     if (bias === "BUY") {
-      // Support below current spot (or within 10 pips above = at-market entry)
-      if (level.price > spot + 10 * pip) continue;
-      // Must not be too far below (not more than 3 ATR)
-      if (spot - level.price > atrAbs * 3) continue;
+      // Support: must be AT or BELOW spot (±$1 tolerance for at-market)
+      if (dist > 1.0) continue;
+      // Not too far below
+      if (spot - level.price > window) continue;
 
-      // Entry just above the support level
-      const dist = spot - level.price;
-      const entry = dist < 5 * pip ? spot : level.price + buf;  // at-market if very close
-      const sl = level.price - (MAX_SL_PIPS - SL_LEVEL_BUFFER * 2) * pip;
-      const slPips = Math.round((entry - sl) / pip);
-      if (slPips < 8 || slPips > MAX_SL_PIPS) continue;
+      // Entry just inside (above) the support level
+      const entry = level.price + SL_LEVEL_BUFFER;
+      // SL beyond (below) the level — $2.50 below the level
+      const sl    = level.price - SL_BEYOND_LEVEL;
+      const slPips = Math.round((entry - sl) * 10) / 10; // keep 1dp
 
-      const tpPips = Math.max(MIN_TP_PIPS, Math.min(MAX_TP_PIPS, slPips * 14));
-      const tp = entry + tpPips * pip;
+      if (slPips < MIN_SL_PIPS || slPips > MAX_SL_PIPS) continue;
+
+      // TP: aim for R:R 13–20, clamped to $30–$60
+      const rawTp = Math.round(slPips * 15);
+      const tpPips = Math.max(MIN_TP_PIPS, Math.min(MAX_TP_PIPS, rawTp));
+      const tp     = entry + tpPips;
+      const rr     = Math.round((tpPips / slPips) * 10) / 10;
+      if (rr < MIN_RR) continue;
+
       results.push({
-        direction: "BUY",
-        entry:     Math.round(entry * 100) / 100,
-        stopLoss:  Math.round(sl * 100) / 100,
-        takeProfit:Math.round(tp * 100) / 100,
-        slPips,
+        direction:  "BUY",
+        entry:      Math.round(entry * 100) / 100,
+        stopLoss:   Math.round(sl * 100) / 100,
+        takeProfit: Math.round(tp * 100) / 100,
+        slPips:     Math.round(slPips * 10) / 10,
         tpPips,
-        riskReward: Math.round((tpPips / slPips) * 100) / 100,
-        levelType: level.label,
+        riskReward: rr,
+        levelType:  level.label,
         confidence: level.weight,
         source,
       });
+
     } else {
-      // Resistance above current spot
-      if (level.price < spot - 10 * pip) continue;
-      if (level.price - spot > atrAbs * 3) continue;
+      // Resistance: AT or ABOVE spot
+      if (dist < -1.0) continue;
+      if (level.price - spot > window) continue;
 
-      const dist = level.price - spot;
-      const entry = dist < 5 * pip ? spot : level.price - buf;
-      const sl = level.price + (MAX_SL_PIPS - SL_LEVEL_BUFFER * 2) * pip;
-      const slPips = Math.round((sl - entry) / pip);
-      if (slPips < 8 || slPips > MAX_SL_PIPS) continue;
+      const entry = level.price - SL_LEVEL_BUFFER;
+      const sl    = level.price + SL_BEYOND_LEVEL;
+      const slPips = Math.round((sl - entry) * 10) / 10;
 
-      const tpPips = Math.max(MIN_TP_PIPS, Math.min(MAX_TP_PIPS, slPips * 14));
-      const tp = entry - tpPips * pip;
+      if (slPips < MIN_SL_PIPS || slPips > MAX_SL_PIPS) continue;
+
+      const rawTp  = Math.round(slPips * 15);
+      const tpPips = Math.max(MIN_TP_PIPS, Math.min(MAX_TP_PIPS, rawTp));
+      const tp     = entry - tpPips;
+      const rr     = Math.round((tpPips / slPips) * 10) / 10;
+      if (rr < MIN_RR) continue;
+
       results.push({
-        direction: "SELL",
-        entry:     Math.round(entry * 100) / 100,
-        stopLoss:  Math.round(sl * 100) / 100,
-        takeProfit:Math.round(tp * 100) / 100,
-        slPips,
+        direction:  "SELL",
+        entry:      Math.round(entry * 100) / 100,
+        stopLoss:   Math.round(sl * 100) / 100,
+        takeProfit: Math.round(tp * 100) / 100,
+        slPips:     Math.round(slPips * 10) / 10,
         tpPips,
-        riskReward: Math.round((tpPips / slPips) * 100) / 100,
-        levelType: level.label,
+        riskReward: rr,
+        levelType:  level.label,
         confidence: level.weight,
         source,
       });
     }
   }
 
+  // Best zone = highest confidence × R:R
   return results
     .sort((a, b) => b.confidence * b.riskReward - a.confidence * a.riskReward)
     .slice(0, 8);
