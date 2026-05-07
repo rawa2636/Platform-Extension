@@ -600,6 +600,44 @@ export interface TraderDashboard {
   equityCurve: TraderDashboardEquityCurveItem[];
 }
 
+export interface GeminiConversation {
+  id: number;
+  title: string;
+  createdAt: string;
+}
+
+export interface GeminiMessage {
+  id: number;
+  conversationId: number;
+  role: string;
+  content: string;
+  imageBase64?: string | null;
+  imageMime?: string | null;
+  thinkingSteps?: string | null;
+  createdAt: string;
+}
+
+export interface CreateGeminiConversationBody {
+  title: string;
+}
+
+export interface SendGeminiMessageBody {
+  content: string;
+  imageBase64?: string | null;
+  imageMime?: string | null;
+}
+
+export interface GeminiConversationWithMessages {
+  id: number;
+  title: string;
+  createdAt: string;
+  messages: GeminiMessage[];
+}
+
+export interface GeminiError {
+  error: string;
+}
+
 export type ListModelsParams = {
   status?: ListModelsStatus;
   type?: ListModelsType;

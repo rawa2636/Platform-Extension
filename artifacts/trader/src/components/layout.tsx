@@ -10,7 +10,7 @@ import {
   getGetTraderSnapshotQueryKey
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, Activity, BarChart2, Settings, Play, Power, ShieldAlert, Zap } from "lucide-react";
+import { LayoutDashboard, Activity, BarChart2, Settings, Play, Power, ShieldAlert, Zap, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +58,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { href: "/", icon: LayoutDashboard, label: "لوحة التحكم" },
     { href: "/signals", icon: Activity, label: "الإشارات" },
     { href: "/positions", icon: BarChart2, label: "الصفقات" },
+    { href: "/chat", icon: MessageSquare, label: "المساعد الذكي" },
     { href: "/settings", icon: Settings, label: "الإعدادات" },
   ];
 

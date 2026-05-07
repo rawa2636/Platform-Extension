@@ -8,6 +8,7 @@ import Signals from "@/pages/signals";
 import SignalDetail from "@/pages/signal-detail";
 import Positions from "@/pages/positions";
 import Settings from "@/pages/settings";
+import Chat from "@/pages/chat";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ function Router() {
         <Route path="/signals/:id" component={SignalDetail} />
         <Route path="/positions" component={Positions} />
         <Route path="/settings" component={Settings} />
+        <Route path="/chat" component={Chat} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
