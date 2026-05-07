@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/trader/"
+previewPath = "/"
 title = "Gold Trading Agent"
 version = "1.0.0"
 id = "artifacts/trader"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/trader/" ]
+paths = [ "/" ]
 localPort = 19233
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "19233"
-BASE_PATH = "/trader/"
+BASE_PATH = "/"

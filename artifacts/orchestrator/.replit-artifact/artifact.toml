@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/"
+previewPath = "/orchestrator/"
 title = "Model Orchestrator"
 version = "1.0.0"
 id = "artifacts/orchestrator"
@@ -11,7 +11,7 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
+paths = [ "/orchestrator/" ]
 localPort = 18842
 
 [services.development]
@@ -28,4 +28,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "18842"
-BASE_PATH = "/"
+BASE_PATH = "/orchestrator/"

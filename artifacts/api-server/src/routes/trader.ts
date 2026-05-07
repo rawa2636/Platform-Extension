@@ -375,7 +375,7 @@ router.post("/trader/cycle/run", async (_req, res) => {
   res.json(RunTraderCycleResponse.parse(result));
 });
 
-// ── Multi-Agent Consensus: dry-run (no trade committed) ───────────────────
+// ── Multi-Agent Consensus: dry-run JSON (no trade committed) ─────────────
 router.get("/trader/decision", async (req, res) => {
   try {
     const { runConsensus } = await import("../lib/trader/consensus.js");
@@ -390,6 +390,64 @@ router.get("/trader/decision", async (req, res) => {
     res.status(503).json({
       error: `decision engine failed: ${err instanceof Error ? err.message : String(err)}`,
     });
+  }
+});
+
+// ── Multi-Agent Consensus: SSE streaming (live per-agent progress) ────────
+router.get("/trader/decision/stream", async (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown) => {
+    try {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    } catch { /* client disconnected */ }
+  };
+
+  try {
+    send("status", { stage: "fetching", messageAr: "جارٍ جلب بيانات السوق الحية من المصدر..." });
+
+    const { snapshot } = await fetchAndPersistSnapshot();
+
+    send("snapshot", {
+      spot: snapshot.spot,
+      direction: snapshot.signalDirection,
+      confidence: snapshot.signalConfidence,
+      atrAbs: snapshot.atrAbs,
+      sourceStatus: snapshot.sourceStatus,
+    });
+
+    const { runConsensusWithProgress } = await import("../lib/trader/consensus.js");
+
+    const verdict = await runConsensusWithProgress(
+      snapshot,
+      (event, agentId, output, elapsedMs) => {
+        if (event === "start") {
+          send("agent_start", { agentId });
+        } else {
+          send("agent_done", {
+            agentId,
+            vote: output?.vote,
+            confidence: output?.confidence,
+            elapsedMs,
+            entryZone: output?.entryZone ?? null,
+          });
+        }
+      },
+    );
+
+    send("verdict", verdict);
+    res.end();
+  } catch (err) {
+    req.log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      "trader.decision.stream.failed",
+    );
+    send("error", { message: err instanceof Error ? err.message : String(err) });
+    res.end();
   }
 });
 

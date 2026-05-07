@@ -1,4 +1,4 @@
-import { useGetTraderDashboard, useGetTraderDecision, getGetTraderDashboardQueryKey, getGetTraderDecisionQueryKey } from "@workspace/api-client-react";
+import { useGetTraderDashboard, getGetTraderDashboardQueryKey } from "@workspace/api-client-react";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, formatPercent, formatPrice, formatTimeAbsolute, formatUnits } from "@/lib/format";
 import { PnlDisplay, DirectionBadge, StatusBadge } from "@/components/ui-patterns";
@@ -73,17 +73,98 @@ export default function Dashboard() {
     query: { queryKey: getGetTraderDashboardQueryKey(), refetchInterval: 8000 }
   });
 
-  const {
-    data: decisionData,
-    isFetching: decisionFetching,
-    refetch: refetchDecision,
-  } = useGetTraderDecision({
-    query: {
-      queryKey: getGetTraderDecisionQueryKey(),
-      enabled: false,
-      staleTime: 0,
-    }
-  });
+  // ── SSE Streaming Decision State ─────────────────────────────────────────
+  type StreamPhase = "idle" | "snapshot" | "analyzing" | "done" | "error";
+  type AgentStatus = {
+    state: "waiting" | "running" | "done";
+    vote?: string;
+    confidence?: number;
+    elapsedMs?: number;
+    entryZone?: unknown | null;
+  };
+
+  const [streamPhase, setStreamPhase] = useState<StreamPhase>("idle");
+  const [streamMsg, setStreamMsg] = useState("");
+  const [agentStatus, setAgentStatus] = useState<Record<string, AgentStatus>>({});
+  const [streamSnapshot, setStreamSnapshot] = useState<{ spot: number; direction: string; confidence: number } | null>(null);
+  const [decisionData, setDecisionData] = useState<Record<string, unknown> | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+
+  const AGENT_ORDER = ["platform_analyzer", "orderflow", "trap_engine", "macro", "vision", "llm_ensemble"];
+
+  function runStreamingDecision() {
+    // Close any existing stream
+    esRef.current?.close();
+    setStreamPhase("snapshot");
+    setStreamMsg("جارٍ جلب بيانات السوق الحية من المصدر...");
+    setAgentStatus({});
+    setStreamSnapshot(null);
+    setDecisionData(null);
+
+    const es = new EventSource("/api/trader/decision/stream");
+    esRef.current = es;
+
+    es.addEventListener("status", (e) => {
+      const d = JSON.parse(e.data) as { messageAr?: string };
+      setStreamMsg(d.messageAr ?? "");
+    });
+
+    es.addEventListener("snapshot", (e) => {
+      const d = JSON.parse(e.data) as { spot: number; direction: string; confidence: number };
+      setStreamSnapshot(d);
+      setStreamPhase("analyzing");
+      setStreamMsg("جارٍ تشغيل الوكلاء الستة بالتوازي...");
+      // Initialise all agents as waiting
+      const init: Record<string, AgentStatus> = {};
+      AGENT_ORDER.forEach(id => { init[id] = { state: "waiting" }; });
+      setAgentStatus(init);
+    });
+
+    es.addEventListener("agent_start", (e) => {
+      const d = JSON.parse(e.data) as { agentId: string };
+      setAgentStatus(prev => ({ ...prev, [d.agentId]: { ...prev[d.agentId], state: "running" } }));
+    });
+
+    es.addEventListener("agent_done", (e) => {
+      const d = JSON.parse(e.data) as { agentId: string; vote: string; confidence: number; elapsedMs: number; entryZone: unknown };
+      setAgentStatus(prev => ({
+        ...prev,
+        [d.agentId]: { state: "done", vote: d.vote, confidence: d.confidence, elapsedMs: d.elapsedMs, entryZone: d.entryZone },
+      }));
+    });
+
+    es.addEventListener("verdict", (e) => {
+      const d = JSON.parse(e.data) as Record<string, unknown>;
+      setDecisionData(d);
+      setStreamPhase("done");
+      setStreamMsg("");
+      es.close();
+    });
+
+    es.addEventListener("error", (e) => {
+      try {
+        const d = JSON.parse((e as MessageEvent).data) as { message: string };
+        setStreamMsg(d.message);
+      } catch { setStreamMsg("حدث خطأ في التحليل"); }
+      setStreamPhase("error");
+      es.close();
+    });
+
+    es.onerror = () => {
+      if (streamPhase !== "done") {
+        setStreamPhase("error");
+        setStreamMsg("انقطع الاتصال بمحرك التحليل");
+      }
+      es.close();
+    };
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => { esRef.current?.close(); };
+  }, []);
+
+  const decisionFetching = streamPhase === "snapshot" || streamPhase === "analyzing";
 
   // Bookmap YouTube state
   const [bookmapUrls, setBookmapUrls] = useState<string[]>(loadBookmapUrls);
@@ -233,165 +314,240 @@ export default function Dashboard() {
 
       {/* ── Consensus Engine Live Panel ──────────────────────────────────── */}
       <motion.div variants={itemVariants}>
-        <Card className={`border-2 transition-colors ${
-          decisionData
-            ? decisionData.verdict === "ALLOW"
-              ? "border-emerald-500/40"
-              : "border-destructive/40"
-            : "border-border"
+        <Card className={`border-2 transition-colors duration-500 ${
+          streamPhase === "done" && decisionData
+            ? (decisionData.verdict as string) === "ALLOW"
+              ? "border-emerald-500/50"
+              : "border-destructive/50"
+            : streamPhase === "error"
+              ? "border-destructive/30"
+              : "border-border"
         }`}>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between">
+            <CardTitle className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
-                <Cpu className="h-5 w-5 text-primary" />
-                محرك الإجماع متعدد الوكلاء (6 وكلاء + Plan 0)
+                <Cpu className={`h-5 w-5 text-primary ${decisionFetching ? "animate-pulse" : ""}`} />
+                محرك الإجماع متعدد الوكلاء — 6 وكلاء + نماذج كمية
               </div>
-              <div className="flex items-center gap-3">
-                {decisionData && (
-                  <Badge className={decisionData.verdict === "ALLOW"
-                    ? "bg-emerald-600 text-white text-xs"
-                    : "bg-destructive text-white text-xs"}>
-                    {decisionData.verdict === "ALLOW" ? "مسموح" : "محظور"}
+              <div className="flex items-center gap-2 flex-wrap">
+                {streamPhase === "done" && decisionData && (
+                  <Badge className={(decisionData.verdict as string) === "ALLOW"
+                    ? "bg-emerald-600 text-white text-sm px-3 py-1"
+                    : "bg-destructive text-white text-sm px-3 py-1"}>
+                    {(decisionData.verdict as string) === "ALLOW" ? "مسموح بالتداول" : "محظور"}
+                  </Badge>
+                )}
+                {streamSnapshot && decisionFetching && (
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {streamSnapshot.spot.toFixed(2)} · {streamSnapshot.direction} · {(streamSnapshot.confidence * 100).toFixed(0)}%
                   </Badge>
                 )}
                 <Button
-                  variant="outline"
+                  variant={streamPhase === "idle" ? "default" : "outline"}
                   size="sm"
-                  onClick={() => refetchDecision()}
+                  onClick={runStreamingDecision}
                   disabled={decisionFetching}
                   className="h-8 text-xs gap-1"
                 >
                   <RefreshCw className={`w-3 h-3 ${decisionFetching ? "animate-spin" : ""}`} />
-                  {decisionFetching ? "جارٍ التحليل..." : "تشغيل تحليل الإجماع"}
+                  {decisionFetching
+                    ? streamPhase === "snapshot"
+                      ? "جلب البيانات..."
+                      : "التحليل جارٍ..."
+                    : streamPhase === "done"
+                      ? "إعادة التحليل"
+                      : "تشغيل تحليل الإجماع"}
                 </Button>
               </div>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            {!decisionData && !decisionFetching && (
-              <div className="text-center py-8 text-muted-foreground border border-dashed border-border rounded-lg">
-                <Cpu className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">اضغط "تشغيل تحليل الإجماع" لاستطلاع 6 وكلاء + نماذج Plan 0 في الوقت الفعلي</p>
-                <p className="text-xs mt-1 opacity-60">يستغرق ~10-15 ثانية (يشمل استدعاء نماذج LLM)</p>
-              </div>
-            )}
-            {decisionFetching && (
-              <div className="space-y-3 py-4">
-                {["محلل المنصة", "تدفق الأوامر", "كشف الفخ", "العوامل الكلية", "رؤية الهيت ماب", "نماذج LLM (Plan 0)"].map((label) => (
-                  <div key={label} className="flex items-center gap-3 p-3 border border-border rounded-lg animate-pulse">
-                    <div className="w-4 h-4 rounded-full bg-muted" />
-                    <span className="text-sm text-muted-foreground">{label}</span>
-                    <div className="mr-auto w-16 h-5 bg-muted rounded" />
-                  </div>
-                ))}
-              </div>
-            )}
-            {decisionData && !decisionFetching && (
-              <div className="space-y-4">
-                {/* Threshold row */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                  {[
-                    { label: "الثقة العالمية", value: decisionData.globalConfidence, threshold: decisionData.thresholds?.minGlobalConfidence ?? 0.8, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: false },
-                    { label: "نقاط الفخ", value: decisionData.trapScore, threshold: decisionData.thresholds?.maxTrapScore ?? 0.2, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: true },
-                    { label: "اكتمال البيانات", value: decisionData.dataCompleteness, threshold: decisionData.thresholds?.minDataCompleteness ?? 0.9, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: false },
-                    { label: "توافق الوكلاء", value: decisionData.deterministicAgreeCount, threshold: decisionData.thresholds?.minDeterministicAgents ?? 3, fmt: (v: number) => `${v}`, inverted: false },
-                    { label: "توافق LLM", value: decisionData.llmAgreeCount, threshold: decisionData.thresholds?.minLlmAgents ?? 2, fmt: (v: number) => `${v}`, inverted: false },
-                  ].map((m) => {
-                    const passing = m.inverted ? m.value <= m.threshold : m.value >= m.threshold;
-                    return (
-                      <div key={m.label} className={`p-3 rounded-lg border text-center ${passing ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/30 bg-destructive/5"}`}>
-                        <div className={`text-xl font-bold font-mono ${passing ? "text-emerald-400" : "text-destructive"}`}>{m.fmt(m.value)}</div>
-                        <div className="text-xs text-muted-foreground mt-1">{m.label}</div>
-                        <div className="text-[10px] font-mono mt-0.5 opacity-60">{m.inverted ? "<=" : ">="} {m.fmt(m.threshold)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+          <CardContent className="space-y-4">
 
-                {/* Agent grid */}
+            {/* IDLE — call to action */}
+            {streamPhase === "idle" && (
+              <div className="text-center py-10 text-muted-foreground border border-dashed border-border rounded-lg">
+                <Cpu className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                <p className="text-sm font-medium">اضغط "تشغيل تحليل الإجماع"</p>
+                <p className="text-xs mt-1 opacity-60">6 وكلاء تحليليون + 3 نماذج كمية داخلية يعملون بالتوازي في الوقت الفعلي</p>
+                <div className="flex justify-center gap-4 mt-4 text-[10px] opacity-50">
+                  <span>فيبوناتشي</span><span>•</span>
+                  <span>محاور السعر</span><span>•</span>
+                  <span>تدفق الأوامر</span><span>•</span>
+                  <span>COT</span><span>•</span>
+                  <span>كشف الفخ</span><span>•</span>
+                  <span>هيت ماب السيولة</span>
+                </div>
+              </div>
+            )}
+
+            {/* SNAPSHOT — fetching data */}
+            {streamPhase === "snapshot" && (
+              <div className="text-center py-6">
+                <div className="flex items-center justify-center gap-2 text-primary mb-2">
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span className="text-sm font-medium">{streamMsg}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">جارٍ الاتصال بمصدر البيانات الحي...</p>
+              </div>
+            )}
+
+            {/* ANALYZING — live agent grid */}
+            {(streamPhase === "analyzing" || streamPhase === "done") && (
+              <>
+                {/* Per-agent live cards */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                  {decisionData.agents?.map((ga: { output: { agentId: string; vote: string; confidence: number }; guard: { passed: boolean; adjustedConfidence: number } }) => {
-                    const Icon = AGENT_ICONS[ga.output.agentId] ?? Activity;
-                    const label = AGENT_LABELS[ga.output.agentId] ?? ga.output.agentId;
-                    const direction = decisionData.direction;
-                    const isAgree = ga.output.vote === direction;
-                    const voteColor =
-                      ga.output.vote === "BUY" ? "text-emerald-400"
-                      : ga.output.vote === "SELL" ? "text-destructive"
+                  {AGENT_ORDER.map((agentId) => {
+                    const Icon = AGENT_ICONS[agentId] ?? Activity;
+                    const label = AGENT_LABELS[agentId] ?? agentId;
+                    const ag = agentStatus[agentId];
+                    const finalDir = decisionData?.direction as string | null | undefined;
+
+                    // After verdict is received, use the full guard data
+                    const guardedAgent = streamPhase === "done" && decisionData
+                      ? (decisionData.agents as Array<{output:{agentId:string;vote:string;confidence:number};guard:{passed:boolean;adjustedConfidence:number}}>)
+                          ?.find(a => a.output.agentId === agentId)
+                      : null;
+
+                    const vote = guardedAgent?.output.vote ?? ag?.vote;
+                    const conf = guardedAgent ? guardedAgent.guard.adjustedConfidence : ag?.confidence;
+                    const passed = guardedAgent ? guardedAgent.guard.passed : ag?.state === "done";
+                    const isAgree = vote === finalDir;
+
+                    const voteColor = vote === "BUY" ? "text-emerald-400"
+                      : vote === "SELL" ? "text-destructive"
                       : "text-muted-foreground";
+
+                    const borderClass = !ag || ag.state === "waiting"
+                      ? "border-border/40 bg-muted/5 opacity-40"
+                      : ag.state === "running"
+                        ? "border-primary/50 bg-primary/5 animate-pulse"
+                        : isAgree && passed
+                          ? "border-emerald-500/40 bg-emerald-500/5"
+                          : !passed
+                            ? "border-border/30 bg-muted/10 opacity-50"
+                            : "border-border bg-card";
+
                     return (
-                      <div key={ga.output.agentId}
-                        className={`p-3 rounded-lg border text-center ${
-                          isAgree && ga.guard.passed
-                            ? "border-emerald-500/30 bg-emerald-500/5"
-                            : !ga.guard.passed
-                              ? "border-border/50 bg-muted/10 opacity-50"
-                              : "border-border bg-card"
-                        }`}>
-                        <Icon className="w-4 h-4 mx-auto mb-1 text-primary" />
-                        <div className={`text-sm font-bold font-mono ${voteColor}`}>{ga.output.vote}</div>
-                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</div>
-                        <div className="text-[10px] font-mono mt-0.5 opacity-70">{(ga.guard.adjustedConfidence * 100).toFixed(0)}%</div>
-                        {!ga.guard.passed && (
-                          <XCircle className="w-3 h-3 text-destructive mx-auto mt-1" />
+                      <div key={agentId} className={`p-3 rounded-lg border text-center transition-all duration-300 ${borderClass}`}>
+                        <Icon className={`w-4 h-4 mx-auto mb-1 ${ag?.state === "running" ? "animate-pulse text-primary" : "text-primary"}`} />
+                        {ag?.state === "running" ? (
+                          <div className="text-[10px] text-primary font-mono animate-pulse mt-1">يُحلّل...</div>
+                        ) : ag?.state === "done" || guardedAgent ? (
+                          <>
+                            <div className={`text-sm font-bold font-mono ${voteColor}`}>{vote ?? "—"}</div>
+                            <div className="text-[10px] font-mono opacity-70 mt-0.5">{conf !== undefined ? `${(conf * 100).toFixed(0)}%` : ""}</div>
+                            {ag?.elapsedMs && <div className="text-[10px] opacity-40 font-mono">{ag.elapsedMs}ms</div>}
+                            {passed && isAgree && <CheckCircle2 className="w-3 h-3 text-emerald-400 mx-auto mt-1" />}
+                            {!passed && guardedAgent && <XCircle className="w-3 h-3 text-destructive mx-auto mt-1" />}
+                          </>
+                        ) : (
+                          <div className="text-[10px] text-muted-foreground mt-1 opacity-40">انتظار</div>
                         )}
-                        {ga.guard.passed && isAgree && (
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400 mx-auto mt-1" />
-                        )}
+                        <div className="text-[10px] text-muted-foreground truncate mt-1 leading-tight">{label}</div>
                       </div>
                     );
                   })}
                 </div>
 
-                {/* Entry Zone — always shown when computed */}
-                {decisionData.entryZone && (() => {
-                  const ez = decisionData.entryZone!;
-                  const isBuy = ez.direction === "BUY";
-                  return (
-                    <div className={`rounded-lg border-2 p-4 ${isBuy ? "border-emerald-500/50 bg-emerald-500/5" : "border-destructive/50 bg-destructive/5"}`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Target className={`h-4 w-4 ${isBuy ? "text-emerald-400" : "text-destructive"}`} />
-                          <span className="text-sm font-semibold">منطقة الدخول المثلى (SL≤30 نقطة)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge className={isBuy ? "bg-emerald-600 text-white" : "bg-destructive text-white"}>
-                            {isBuy ? "شراء" : "بيع"}
-                          </Badge>
-                          <Badge variant="outline" className="font-mono text-xs">{ez.levelType}</Badge>
-                          <Badge variant="outline" className="font-mono text-xs text-primary">R:R {ez.riskReward}</Badge>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="text-center p-2 rounded bg-background/50 border border-border">
-                          <div className="text-[10px] text-muted-foreground mb-1">دخول</div>
-                          <div className="text-base font-bold font-mono text-foreground">{ez.entry.toFixed(2)}</div>
-                        </div>
-                        <div className="text-center p-2 rounded bg-background/50 border border-destructive/30">
-                          <div className="text-[10px] text-muted-foreground mb-1">وقف الخسارة ({ez.slPips} نقطة)</div>
-                          <div className="text-base font-bold font-mono text-destructive">{ez.stopLoss.toFixed(2)}</div>
-                        </div>
-                        <div className="text-center p-2 rounded bg-background/50 border border-emerald-500/30">
-                          <div className="text-[10px] text-muted-foreground mb-1">هدف ({ez.tpPips} نقطة)</div>
-                          <div className="text-base font-bold font-mono text-emerald-400">{ez.takeProfit.toFixed(2)}</div>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-[10px] text-muted-foreground font-mono text-center">
-                        مصدر التحليل: {ez.source} | ثقة المستوى: {(ez.confidence * 100).toFixed(0)}%
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {decisionData.blockReason && (
-                  <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded p-3 font-mono leading-relaxed">
-                    {decisionData.blockReason.split(";").map((r, i) => (
-                      <div key={i} className="flex gap-1"><span className="opacity-50">—</span><span>{r.trim()}</span></div>
-                    ))}
+                {/* Status message during analysis */}
+                {streamPhase === "analyzing" && streamMsg && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+                    <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+                    <span>{streamMsg}</span>
                   </div>
                 )}
+              </>
+            )}
+
+            {/* ERROR */}
+            {streamPhase === "error" && (
+              <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded p-3 font-mono">
+                {streamMsg || "حدث خطأ في محرك التحليل"}
               </div>
             )}
+
+            {/* DONE — verdict details */}
+            {streamPhase === "done" && decisionData && (() => {
+              const d = decisionData as Record<string, unknown> & {
+                globalConfidence: number; trapScore: number; dataCompleteness: number;
+                deterministicAgreeCount: number; llmAgreeCount: number;
+                thresholds?: Record<string, number>;
+                blockReason?: string | null;
+                entryZone?: { direction: string; entry: number; stopLoss: number; takeProfit: number; slPips: number; tpPips: number; riskReward: number; levelType: string; confidence: number; source: string } | null;
+              };
+              return (
+                <div className="space-y-4 border-t border-border pt-4">
+                  {/* Threshold gauges */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {[
+                      { label: "الثقة العالمية", value: d.globalConfidence, threshold: d.thresholds?.minGlobalConfidence ?? 0.6, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: false },
+                      { label: "نقاط الفخ", value: d.trapScore, threshold: d.thresholds?.maxTrapScore ?? 0.3, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: true },
+                      { label: "اكتمال البيانات", value: d.dataCompleteness, threshold: d.thresholds?.minDataCompleteness ?? 0.7, fmt: (v: number) => `${(v*100).toFixed(0)}%`, inverted: false },
+                      { label: "توافق الوكلاء", value: d.deterministicAgreeCount, threshold: d.thresholds?.minDeterministicAgents ?? 3, fmt: (v: number) => `${v}`, inverted: false },
+                      { label: "توافق النماذج", value: d.llmAgreeCount, threshold: d.thresholds?.minLlmAgents ?? 2, fmt: (v: number) => `${v}`, inverted: false },
+                    ].map((m) => {
+                      const passing = m.inverted ? m.value <= m.threshold : m.value >= m.threshold;
+                      return (
+                        <div key={m.label} className={`p-3 rounded-lg border text-center ${passing ? "border-emerald-500/30 bg-emerald-500/5" : "border-destructive/30 bg-destructive/5"}`}>
+                          <div className={`text-xl font-bold font-mono ${passing ? "text-emerald-400" : "text-destructive"}`}>{m.fmt(m.value)}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{m.label}</div>
+                          <div className="text-[10px] font-mono mt-0.5 opacity-60">{m.inverted ? "<=" : ">="} {m.fmt(m.threshold)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Entry Zone */}
+                  {d.entryZone && (() => {
+                    const ez = d.entryZone!;
+                    const isBuy = ez.direction === "BUY";
+                    return (
+                      <div className={`rounded-lg border-2 p-4 ${isBuy ? "border-emerald-500/50 bg-emerald-500/5" : "border-destructive/50 bg-destructive/5"}`}>
+                        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <Target className={`h-4 w-4 ${isBuy ? "text-emerald-400" : "text-destructive"}`} />
+                            <span className="text-sm font-semibold">منطقة الدخول المثلى</span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge className={isBuy ? "bg-emerald-600 text-white" : "bg-destructive text-white"}>
+                              {isBuy ? "شراء" : "بيع"}
+                            </Badge>
+                            <Badge variant="outline" className="font-mono text-xs">{ez.levelType}</Badge>
+                            <Badge variant="outline" className="font-mono text-xs text-primary">R:R {ez.riskReward}:1</Badge>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="text-center p-3 rounded-lg bg-background/60 border border-border">
+                            <div className="text-[10px] text-muted-foreground mb-1">دخول عند المستوى</div>
+                            <div className="text-lg font-bold font-mono">{ez.entry.toFixed(2)}</div>
+                          </div>
+                          <div className="text-center p-3 rounded-lg bg-background/60 border border-destructive/30">
+                            <div className="text-[10px] text-muted-foreground mb-1">وقف الخسارة (${ez.slPips})</div>
+                            <div className="text-lg font-bold font-mono text-destructive">{ez.stopLoss.toFixed(2)}</div>
+                          </div>
+                          <div className="text-center p-3 rounded-lg bg-background/60 border border-emerald-500/30">
+                            <div className="text-[10px] text-muted-foreground mb-1">الهدف (${ez.tpPips})</div>
+                            <div className="text-lg font-bold font-mono text-emerald-400">{ez.takeProfit.toFixed(2)}</div>
+                          </div>
+                        </div>
+                        <div className="mt-2 text-[10px] text-muted-foreground font-mono text-center opacity-70">
+                          {ez.source} · ثقة المستوى {(ez.confidence * 100).toFixed(0)}%
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Block reasons */}
+                  {d.blockReason && (
+                    <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg p-3 font-mono leading-relaxed space-y-1">
+                      {d.blockReason.split(";").map((r, i) => (
+                        <div key={i} className="flex gap-1.5"><span className="opacity-40 shrink-0">—</span><span>{r.trim()}</span></div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       </motion.div>

@@ -30,7 +30,7 @@ export const MODE_CONFIGS: Record<TradingMode, ModeConfig> = {
 
 export const SOURCE_BASE_URL =
   process.env.GOLD_SOURCE_URL ??
-  "https://source-bootstrap--wenat95130.replit.app";
+  "https://source-bootstrap-11--mohamthana.replit.app";
 
 export interface NormalizedSnapshot {
   fetchedAt: string;

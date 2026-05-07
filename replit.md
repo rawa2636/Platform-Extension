@@ -35,7 +35,7 @@ endpoints, and expose a smart router. Plan 1 (trading agent) will consume this r
 
 ### Artifacts
 - `artifacts/api-server` (Express 5, mounted on `/api`) — harvester pipeline + REST API
-- `artifacts/orchestrator` (React + Vite + Tailwind v4 + shadcn/ui + recharts + wouter, mounted on `/`) — operator dashboard
+- `artifacts/orchestrator` (React + Vite + Tailwind v4 + shadcn/ui + recharts + wouter, mounted on `/orchestrator/`) — operator dashboard
 - `artifacts/mockup-sandbox` (component preview) — unused for this product
 
 ### Database tables (`lib/db/src/schema`)
@@ -88,7 +88,7 @@ Paper-trading control room for a single operator on XAU/USD. Consumes a real-tim
 
 ### Artifacts
 - `artifacts/api-server` — extended with the trader engine, routes, and scheduler (same Express server, mounted on `/api`)
-- `artifacts/trader` (React + Vite + Tailwind v4 + shadcn/ui + recharts + framer-motion + wouter, mounted on `/trader`) — Arabic RTL operator cockpit
+- `artifacts/trader` (React + Vite + Tailwind v4 + shadcn/ui + recharts + framer-motion + wouter, mounted on `/`) — Arabic RTL operator cockpit
 
 ### Data source
 `https://source-bootstrap--wenat95130.replit.app/intelligence` (signal, market, levels, news, timing, traps, divergence, macro, cot) plus `/macro`, `/cot`, `/mode`. Modes: DAILY (atrMult 1.8, R:R 1.8, 300s expiry); MID (atrMult 1.3, R:R 1.5, 180s expiry). Override base via `SOURCE_BASE_URL`.

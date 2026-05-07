@@ -183,6 +183,65 @@ function pickBestEntryZone(
   );
 }
 
+// ── Internal: build verdict from raw outputs ──────────────────────────────
+function buildVerdict(
+  rawAgents: AgentOutput[],
+  t0: number,
+): ConsensusVerdict {
+  const agents: GuardedAgent[] = rawAgents.map((output) => ({
+    output,
+    guard: guardValidate(output),
+  }));
+
+  const direction              = resolveDirection(agents);
+  const globalConfidence       = computeGlobalConfidence(agents, direction);
+  const trapScore              = extractTrapScore(agents);
+  const dataCompleteness       = computeDataCompleteness(agents);
+  const deterministicAgreeCount = countDeterministicAgreement(agents, direction);
+  const llmAgreeCount          = countLlmAgreement(agents, direction);
+
+  const blockReasons: string[] = [];
+  if (!direction) blockReasons.push("لا يوجد اتجاه سائد — الوكلاء منقسمون");
+  if (deterministicAgreeCount < THRESHOLDS.minDeterministicAgents)
+    blockReasons.push(`فقط ${deterministicAgreeCount}/${THRESHOLDS.minDeterministicAgents} وكلاء تحديديين يتفقون`);
+  if (llmAgreeCount < THRESHOLDS.minLlmAgents)
+    blockReasons.push(`فقط ${llmAgreeCount}/${THRESHOLDS.minLlmAgents} نماذج تتفق`);
+  if (globalConfidence < THRESHOLDS.minGlobalConfidence)
+    blockReasons.push(`الثقة الإجمالية ${(globalConfidence * 100).toFixed(1)}% أقل من ${(THRESHOLDS.minGlobalConfidence * 100).toFixed(0)}%`);
+  if (trapScore > THRESHOLDS.maxTrapScore)
+    blockReasons.push(`درجة الفخ ${(trapScore * 100).toFixed(1)}% تتجاوز الحد ${(THRESHOLDS.maxTrapScore * 100).toFixed(0)}%`);
+  if (dataCompleteness < THRESHOLDS.minDataCompleteness)
+    blockReasons.push(`اكتمال البيانات ${(dataCompleteness * 100).toFixed(1)}% أقل من ${(THRESHOLDS.minDataCompleteness * 100).toFixed(0)}%`);
+
+  const verdict: "ALLOW" | "BLOCK" = blockReasons.length === 0 ? "ALLOW" : "BLOCK";
+  const entryZone = pickBestEntryZone(agents, direction);
+
+  logger.info(
+    { verdict, direction, globalConfidence, trapScore, dataCompleteness,
+      deterministicAgreeCount, llmAgreeCount, blockReasons,
+      entryZone: entryZone ? `${entryZone.direction}@${entryZone.entry}` : null,
+      elapsedMs: Date.now() - t0 },
+    "trader.consensus.result",
+  );
+
+  return {
+    verdict, direction, globalConfidence, trapScore, dataCompleteness,
+    deterministicAgreeCount, llmAgreeCount, agents,
+    blockReason: blockReasons.length > 0 ? blockReasons.join("; ") : null,
+    entryZone,
+    thresholds: { ...THRESHOLDS },
+    computedAt: new Date().toISOString(),
+  };
+}
+
+// ── Progress callback types ────────────────────────────────────────────────
+export type AgentProgressCb = (
+  event: "start" | "done",
+  agentId: string,
+  output?: AgentOutput,
+  elapsedMs?: number,
+) => void;
+
 // ── Main consensus function ───────────────────────────────────────────────
 export async function runConsensus(snapshot: NormalizedSnapshot): Promise<ConsensusVerdict> {
   const t0 = Date.now();
@@ -199,81 +258,45 @@ export async function runConsensus(snapshot: NormalizedSnapshot): Promise<Consen
       runModelEnsembleAgent(snapshot),
     ]);
 
-  const rawAgents: AgentOutput[] = [platformOut, orderflowOut, trapOut, macroOut, visionOut, ensembleOut];
-
-  // Guard validation for every agent
-  const agents: GuardedAgent[] = rawAgents.map((output) => ({
-    output,
-    guard: guardValidate(output),
-  }));
-
-  // Compute metrics
-  const direction              = resolveDirection(agents);
-  const globalConfidence       = computeGlobalConfidence(agents, direction);
-  const trapScore              = extractTrapScore(agents);
-  const dataCompleteness       = computeDataCompleteness(agents);
-  const deterministicAgreeCount = countDeterministicAgreement(agents, direction);
-  const llmAgreeCount          = countLlmAgreement(agents, direction);
-
-  // ── Strict 5-threshold gate ───────────────────────────────────────────────
-  const blockReasons: string[] = [];
-
-  if (!direction) {
-    blockReasons.push("No dominant direction: agents are divided — insufficient directional conviction");
-  }
-  if (deterministicAgreeCount < THRESHOLDS.minDeterministicAgents) {
-    blockReasons.push(
-      `Only ${deterministicAgreeCount}/${THRESHOLDS.minDeterministicAgents} deterministic agents agree — increase conviction`,
-    );
-  }
-  if (llmAgreeCount < THRESHOLDS.minLlmAgents) {
-    blockReasons.push(
-      `Only ${llmAgreeCount}/${THRESHOLDS.minLlmAgents} model votes agree (internal + Plan 0) — insufficient model consensus`,
-    );
-  }
-  if (globalConfidence < THRESHOLDS.minGlobalConfidence) {
-    blockReasons.push(
-      `Global confidence ${(globalConfidence * 100).toFixed(1)}% < ${(THRESHOLDS.minGlobalConfidence * 100).toFixed(0)}% minimum`,
-    );
-  }
-  if (trapScore > THRESHOLDS.maxTrapScore) {
-    blockReasons.push(
-      `Trap score ${(trapScore * 100).toFixed(1)}% > ${(THRESHOLDS.maxTrapScore * 100).toFixed(0)}% maximum — potential liquidity trap`,
-    );
-  }
-  if (dataCompleteness < THRESHOLDS.minDataCompleteness) {
-    blockReasons.push(
-      `Data completeness ${(dataCompleteness * 100).toFixed(1)}% < ${(THRESHOLDS.minDataCompleteness * 100).toFixed(0)}% — insufficient market data`,
-    );
-  }
-
-  const verdict: "ALLOW" | "BLOCK" = blockReasons.length === 0 ? "ALLOW" : "BLOCK";
-
-  // Best entry zone (always computed regardless of verdict)
-  const entryZone = pickBestEntryZone(agents, direction);
-
-  logger.info(
-    {
-      verdict, direction, globalConfidence, trapScore,
-      dataCompleteness, deterministicAgreeCount, llmAgreeCount,
-      blockReasons, entryZone: entryZone ? `${entryZone.direction}@${entryZone.entry}` : null,
-      elapsedMs: Date.now() - t0,
-    },
-    "trader.consensus.result",
+  return buildVerdict(
+    [platformOut, orderflowOut, trapOut, macroOut, visionOut, ensembleOut],
+    t0,
   );
+}
 
-  return {
-    verdict,
-    direction,
-    globalConfidence,
-    trapScore,
-    dataCompleteness,
-    deterministicAgreeCount,
-    llmAgreeCount,
-    agents,
-    blockReason: blockReasons.length > 0 ? blockReasons.join("; ") : null,
-    entryZone,
-    thresholds: { ...THRESHOLDS },
-    computedAt: new Date().toISOString(),
-  };
+// ── Streaming consensus — emits progress events as each agent completes ───
+export async function runConsensusWithProgress(
+  snapshot: NormalizedSnapshot,
+  onProgress: AgentProgressCb,
+): Promise<ConsensusVerdict> {
+  const t0 = Date.now();
+  logger.info({ spot: snapshot.spot }, "trader.consensus.stream.start");
+
+  // Wrap each agent call to emit start + done events
+  function track<T extends AgentOutput>(
+    agentId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    onProgress("start", agentId);
+    const t = Date.now();
+    return fn().then((out) => {
+      onProgress("done", agentId, out, Date.now() - t);
+      return out;
+    });
+  }
+
+  const [platformOut, orderflowOut, trapOut, macroOut, visionOut, ensembleOut] =
+    await Promise.all([
+      track("platform_analyzer", () => runPlatformAnalyzerAgent(snapshot)),
+      track("orderflow",          () => runOrderFlowAgent(snapshot)),
+      track("trap_engine",        () => runTrapEngineAgent(snapshot)),
+      track("macro",              () => runMacroAgent(snapshot)),
+      track("vision",             () => runVisionAgent(snapshot.spot, snapshot.signalDirection, snapshot.atrAbs)),
+      track("llm_ensemble",       () => runModelEnsembleAgent(snapshot)),
+    ]);
+
+  return buildVerdict(
+    [platformOut, orderflowOut, trapOut, macroOut, visionOut, ensembleOut],
+    t0,
+  );
 }
