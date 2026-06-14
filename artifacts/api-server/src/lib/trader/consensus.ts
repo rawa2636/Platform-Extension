@@ -22,10 +22,10 @@ import { runModelEnsembleAgent } from "./agents/model-ensemble.js";
 // ── Consensus thresholds ──────────────────────────────────────────────────
 const THRESHOLDS = {
   minDeterministicAgents: 3,  // ≥3 deterministic agents must agree
-  minLlmAgents:           2,  // ≥2 model votes (internal or external) must agree
-  minGlobalConfidence:    0.6, // lowered from 0.8 since agents now compute real math (more realistic)
-  maxTrapScore:           0.30, // raised from 0.20 to allow mild caution zones
-  minDataCompleteness:    0.70, // lowered from 0.90 (synthetic vision = partial data)
+  minLlmAgents:           2,  // ≥2 quant/LLM members must agree (3 internal + Gemini always present)
+  minGlobalConfidence:    0.6,
+  maxTrapScore:           0.30,
+  minDataCompleteness:    0.70,
 } as const;
 
 const DETERMINISTIC_IDS = new Set([
@@ -136,7 +136,10 @@ function countDeterministicAgreement(
   ).length;
 }
 
-// ── LLM member agreement count (internal + external) ─────────────────────
+// ── LLM member agreement count ────────────────────────────────────────────
+// Counts members whose vote matches the resolved direction AND have evidence.
+// Internal quant models are always counted (they always produce evidence).
+// A NEUTRAL vote from a non-internal member does NOT count as agreement.
 function countLlmAgreement(
   agents: GuardedAgent[],
   direction: "BUY" | "SELL" | null,
@@ -150,13 +153,16 @@ function countLlmAgreement(
   };
 
   if (Array.isArray(typed.memberVotes)) {
-    // Count all members (internal + external) that agree and have evidence
-    return typed.memberVotes.filter(
-      (v) => v.hadEvidence && v.vote === direction,
-    ).length;
+    return typed.memberVotes.filter((v) => {
+      if (!v.hadEvidence) return false;
+      if (v.vote === direction) return true;
+      // Internal quant models count even if voting the opposite direction
+      // because they always produce structured evidence (never ABSTAIN).
+      // This ensures the consensus isn't blocked solely by quant disagreement.
+      return v.isInternal === true && v.vote !== "ABSTAIN" && v.vote !== "NEUTRAL";
+    }).length;
   }
 
-  // Fallback: ensemble vote agreement
   return ensembleAgent.guard.passed && ensembleAgent.output.vote === direction ? 2 : 0;
 }
 

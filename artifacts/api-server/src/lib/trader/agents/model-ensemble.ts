@@ -1,19 +1,18 @@
 /**
- * Model Ensemble Agent — Plan 0 LLMs + Internal Quantitative Models.
+ * Model Ensemble Agent — Gemini LLM + Internal Quantitative Models + Plan 0.
  *
  * Architecture:
  *   1. Always runs 3 internal quantitative models (never ABSTAIN):
  *      - Quant-Momentum   : ATR trend + timing pressure momentum signal
  *      - Quant-FibRevert  : Fibonacci retracement mean-reversion signal
  *      - Quant-MacroQuant : Cross-asset correlation + COT quant model
- *   2. Supplements with external Plan 0 chat models if available (top 5 by score).
- *   3. Weighted majority vote across all members (external weighted 1.5×).
- *
- * This guarantees at least 3 structured, evidence-backed votes are always produced,
- * so llmAgreeCount can reach the ≥2 threshold without requiring external LLMs.
+ *   2. Calls Gemini (via Replit AI Integrations) as a real LLM analyst.
+ *   3. Supplements with external Plan 0 chat models if available (top 5 by score).
+ *   4. Weighted majority vote across all members.
  */
 import { and, desc, eq } from "drizzle-orm";
 import { db, modelsTable } from "@workspace/db";
+import { ai } from "@workspace/integrations-gemini-ai";
 import { logger } from "../../logger.js";
 import type { NormalizedSnapshot } from "../types.js";
 import type { AgentOutput, AgentEvidence } from "./types.js";
@@ -255,6 +254,86 @@ function runQuantMacroQuant(s: NormalizedSnapshot, atr: number): EnsembleMemberV
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Gemini LLM analyst (real AI — via Replit AI Integrations)
+// ────────────────────────────────────────────────────────────────────────────
+
+async function runGeminiAnalyst(
+  snapshot: NormalizedSnapshot,
+  atr: number,
+): Promise<EnsembleMemberVote> {
+  const t0 = Date.now();
+  const prompt = buildEnsemblePrompt(snapshot, atr);
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                "You are a deterministic JSON-only institutional XAU/USD quant analyst. " +
+                "Respond with EXACTLY one JSON object and nothing else. " +
+                "Apply independent quantitative reasoning — do NOT blindly follow the platform signal.\n\n" +
+                prompt,
+            },
+          ],
+        },
+      ],
+      config: {
+        maxOutputTokens: 8192,
+        temperature: 0,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const latencyMs = Date.now() - t0;
+    const text = response.text ?? "";
+    // Strip markdown code fences if Gemini wraps JSON in ```json ... ```
+    const stripped = text.replace(/```(?:json)?\s*/gi, "").replace(/```/g, "");
+    const match = stripped.trim().match(/\{[\s\S]*\}/);
+    if (!match) {
+      logger.warn({ text: text.slice(0, 200) }, "trader.ensemble.gemini.no_json");
+      return { modelId: "gemini-analyst", modelName: "Gemini Analyst", vote: "ABSTAIN", confidence: 0, reason: "No JSON in response", evidence: null, hadEvidence: false, latencyMs, isInternal: false };
+    }
+
+    const parsed = JSON.parse(match[0]) as LlmRawResponse;
+    const v = (parsed.vote ?? "").toUpperCase();
+    const vote: AgentOutput["vote"] = v === "BUY" || v === "SELL" || v === "NEUTRAL" ? v : "ABSTAIN";
+    const confidence = typeof parsed.confidence === "number" ? Math.min(Math.max(parsed.confidence, 0), 1) : 0.5;
+    const evidence = hasValidEvidence(parsed.evidence) ? parsed.evidence : null;
+
+    logger.info({ vote, confidence, latencyMs }, "trader.ensemble.gemini.vote");
+
+    return {
+      modelId: "gemini-analyst",
+      modelName: "Gemini Analyst",
+      vote,
+      confidence,
+      reason: typeof parsed.reason === "string" ? parsed.reason.slice(0, 300) : null,
+      evidence,
+      hadEvidence: evidence !== null,
+      latencyMs,
+      isInternal: false,
+    };
+  } catch (err) {
+    logger.warn({ err }, "trader.ensemble.gemini.error");
+    return {
+      modelId: "gemini-analyst",
+      modelName: "Gemini Analyst",
+      vote: "ABSTAIN",
+      confidence: 0,
+      reason: err instanceof Error ? err.message.slice(0, 100) : "error",
+      evidence: null,
+      hadEvidence: false,
+      latencyMs: Date.now() - t0,
+      isInternal: false,
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // External Plan 0 model calls
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -388,12 +467,13 @@ export async function runModelEnsembleAgent(
     runQuantMacroQuant(snapshot, atr),
   ];
 
-  // ── 2. Try external Plan 0 models ─────────────────────────────────────────
+  // ── 2. Gemini real LLM + Plan 0 external models (in parallel) ─────────────
   const externalModels = await pickTopChatModels(MAX_EXTERNAL_MODELS);
   const prompt = buildEnsemblePrompt(snapshot, atr);
 
-  const externalVotes: EnsembleMemberVote[] = await Promise.all(
-    externalModels.map(async (m): Promise<EnsembleMemberVote> => {
+  const [geminiVote, ...plan0Votes] = await Promise.all([
+    runGeminiAnalyst(snapshot, atr),
+    ...externalModels.map(async (m): Promise<EnsembleMemberVote> => {
       const { raw, latencyMs } = await callExternalModel(m, prompt);
       if (!raw) return { modelId: m.id, modelName: m.name, vote: "ABSTAIN", confidence: 0, reason: "No response", evidence: null, hadEvidence: false, latencyMs, isInternal: false };
 
@@ -414,8 +494,9 @@ export async function runModelEnsembleAgent(
         isInternal: false,
       };
     }),
-  );
+  ]);
 
+  const externalVotes: EnsembleMemberVote[] = [geminiVote, ...plan0Votes];
   const allVotes = [...internalVotes, ...externalVotes];
 
   // ── 3. Weighted majority vote ─────────────────────────────────────────────
@@ -466,7 +547,8 @@ export async function runModelEnsembleAgent(
   logger.info(
     {
       internalModels: internalVotes.length,
-      externalModels: externalVotes.length,
+      gemini: geminiVote.vote,
+      externalPlan0: plan0Votes.length,
       validCount, buyVotes, sellVotes, abstain,
       ensembleVote,
     },
@@ -475,7 +557,7 @@ export async function runModelEnsembleAgent(
 
   return {
     agentId: "llm_ensemble",
-    agentName: `LLM Ensemble (${internalVotes.length} internal + ${externalModels.length} Plan 0)`,
+    agentName: `LLM Ensemble (${internalVotes.length} internal + Gemini + ${plan0Votes.length} Plan 0)`,
     vote: ensembleVote,
     confidence: Math.round(avgConf * 1000) / 1000,
     evidence: {
