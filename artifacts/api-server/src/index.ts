@@ -25,7 +25,26 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Harvester scheduler — does not touch DB at startup, safe to run directly
   startScheduler();
-  void startTraderScheduler();
-  initGoldPlatform();
+
+  // Trader scheduler — initialises singleton DB rows; wrap so a missing/frozen
+  // production DB does not crash the process and healthz keeps returning 200.
+  startTraderScheduler().catch((err) => {
+    logger.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      "trader.scheduler.start.error — running in degraded mode",
+    );
+  });
+
+  // Gold platform SSE — purely network; wrap defensively
+  try {
+    initGoldPlatform();
+  } catch (err) {
+    logger.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      "gold.platform.init.error — running in degraded mode",
+    );
+  }
 });
