@@ -27,7 +27,16 @@ import type {
   GeminiConversationWithMessages,
   GeminiError,
   GeminiMessage,
+  GetGoldTicksParams,
   GetTopModelsParams,
+  GoldLiquidityZone,
+  GoldOrderBook,
+  GoldOrderFlow,
+  GoldPrice,
+  GoldSnapshot,
+  GoldStatus,
+  GoldSummary,
+  GoldTick,
   HarvestRun,
   HarvestStartResponse,
   HarvestStatus,
@@ -2556,6 +2565,625 @@ export const useDeleteGeminiConversation = <
 > => {
   return useMutation(getDeleteGeminiConversationMutationOptions(options));
 };
+
+/**
+ * @summary Latest bid/ask/mid/spread from gold platform
+ */
+export const getGetGoldPriceUrl = () => {
+  return `/api/gold/price`;
+};
+
+export const getGoldPrice = async (
+  options?: RequestInit,
+): Promise<GoldPrice> => {
+  return customFetch<GoldPrice>(getGetGoldPriceUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldPriceQueryKey = () => {
+  return [`/api/gold/price`] as const;
+};
+
+export const getGetGoldPriceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldPrice>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldPrice>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldPriceQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoldPrice>>> = ({
+    signal,
+  }) => getGoldPrice({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldPrice>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldPriceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldPrice>>
+>;
+export type GetGoldPriceQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Latest bid/ask/mid/spread from gold platform
+ */
+
+export function useGetGoldPrice<
+  TData = Awaited<ReturnType<typeof getGoldPrice>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldPrice>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldPriceQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Recent tick buffer
+ */
+export const getGetGoldTicksUrl = (params?: GetGoldTicksParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/gold/ticks?${stringifiedParams}`
+    : `/api/gold/ticks`;
+};
+
+export const getGoldTicks = async (
+  params?: GetGoldTicksParams,
+  options?: RequestInit,
+): Promise<GoldTick[]> => {
+  return customFetch<GoldTick[]>(getGetGoldTicksUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldTicksQueryKey = (params?: GetGoldTicksParams) => {
+  return [`/api/gold/ticks`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetGoldTicksQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldTicks>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetGoldTicksParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGoldTicks>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldTicksQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoldTicks>>> = ({
+    signal,
+  }) => getGoldTicks(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldTicks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldTicksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldTicks>>
+>;
+export type GetGoldTicksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent tick buffer
+ */
+
+export function useGetGoldTicks<
+  TData = Awaited<ReturnType<typeof getGoldTicks>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetGoldTicksParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getGoldTicks>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldTicksQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Current order book depth
+ */
+export const getGetGoldOrderBookUrl = () => {
+  return `/api/gold/orderbook`;
+};
+
+export const getGoldOrderBook = async (
+  options?: RequestInit,
+): Promise<GoldOrderBook> => {
+  return customFetch<GoldOrderBook>(getGetGoldOrderBookUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldOrderBookQueryKey = () => {
+  return [`/api/gold/orderbook`] as const;
+};
+
+export const getGetGoldOrderBookQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldOrderBook>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldOrderBook>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldOrderBookQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGoldOrderBook>>
+  > = ({ signal }) => getGoldOrderBook({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldOrderBook>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldOrderBookQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldOrderBook>>
+>;
+export type GetGoldOrderBookQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Current order book depth
+ */
+
+export function useGetGoldOrderBook<
+  TData = Awaited<ReturnType<typeof getGoldOrderBook>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldOrderBook>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldOrderBookQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary dominantFlow, liquidityState, institutionalScore
+ */
+export const getGetGoldSummaryUrl = () => {
+  return `/api/gold/summary`;
+};
+
+export const getGoldSummary = async (
+  options?: RequestInit,
+): Promise<GoldSummary> => {
+  return customFetch<GoldSummary>(getGetGoldSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldSummaryQueryKey = () => {
+  return [`/api/gold/summary`] as const;
+};
+
+export const getGetGoldSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldSummaryQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoldSummary>>> = ({
+    signal,
+  }) => getGoldSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldSummary>>
+>;
+export type GetGoldSummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary dominantFlow, liquidityState, institutionalScore
+ */
+
+export function useGetGoldSummary<
+  TData = Awaited<ReturnType<typeof getGoldSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delta, cumulativeDelta, absorption, exhaustion
+ */
+export const getGetGoldOrderFlowUrl = () => {
+  return `/api/gold/orderflow`;
+};
+
+export const getGoldOrderFlow = async (
+  options?: RequestInit,
+): Promise<GoldOrderFlow> => {
+  return customFetch<GoldOrderFlow>(getGetGoldOrderFlowUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldOrderFlowQueryKey = () => {
+  return [`/api/gold/orderflow`] as const;
+};
+
+export const getGetGoldOrderFlowQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldOrderFlow>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldOrderFlow>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldOrderFlowQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGoldOrderFlow>>
+  > = ({ signal }) => getGoldOrderFlow({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldOrderFlow>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldOrderFlowQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldOrderFlow>>
+>;
+export type GetGoldOrderFlowQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Delta, cumulativeDelta, absorption, exhaustion
+ */
+
+export function useGetGoldOrderFlow<
+  TData = Awaited<ReturnType<typeof getGoldOrderFlow>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldOrderFlow>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldOrderFlowQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Stop clusters, liquidity pools, trap zones
+ */
+export const getGetGoldLiquidityZonesUrl = () => {
+  return `/api/gold/liquidity/zones`;
+};
+
+export const getGoldLiquidityZones = async (
+  options?: RequestInit,
+): Promise<GoldLiquidityZone[]> => {
+  return customFetch<GoldLiquidityZone[]>(getGetGoldLiquidityZonesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldLiquidityZonesQueryKey = () => {
+  return [`/api/gold/liquidity/zones`] as const;
+};
+
+export const getGetGoldLiquidityZonesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldLiquidityZones>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldLiquidityZones>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldLiquidityZonesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getGoldLiquidityZones>>
+  > = ({ signal }) => getGoldLiquidityZones({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldLiquidityZones>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldLiquidityZonesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldLiquidityZones>>
+>;
+export type GetGoldLiquidityZonesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Stop clusters, liquidity pools, trap zones
+ */
+
+export function useGetGoldLiquidityZones<
+  TData = Awaited<ReturnType<typeof getGoldLiquidityZones>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldLiquidityZones>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldLiquidityZonesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Platform connection status
+ */
+export const getGetGoldStatusUrl = () => {
+  return `/api/gold/status`;
+};
+
+export const getGoldStatus = async (
+  options?: RequestInit,
+): Promise<GoldStatus> => {
+  return customFetch<GoldStatus>(getGetGoldStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldStatusQueryKey = () => {
+  return [`/api/gold/status`] as const;
+};
+
+export const getGetGoldStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoldStatus>>> = ({
+    signal,
+  }) => getGoldStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldStatus>>
+>;
+export type GetGoldStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Platform connection status
+ */
+
+export function useGetGoldStatus<
+  TData = Awaited<ReturnType<typeof getGoldStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Full snapshot — all gold data at once
+ */
+export const getGetGoldSnapshotUrl = () => {
+  return `/api/gold/snapshot`;
+};
+
+export const getGoldSnapshot = async (
+  options?: RequestInit,
+): Promise<GoldSnapshot> => {
+  return customFetch<GoldSnapshot>(getGetGoldSnapshotUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGoldSnapshotQueryKey = () => {
+  return [`/api/gold/snapshot`] as const;
+};
+
+export const getGetGoldSnapshotQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGoldSnapshot>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldSnapshot>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGoldSnapshotQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoldSnapshot>>> = ({
+    signal,
+  }) => getGoldSnapshot({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldSnapshot>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGoldSnapshotQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGoldSnapshot>>
+>;
+export type GetGoldSnapshotQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Full snapshot — all gold data at once
+ */
+
+export function useGetGoldSnapshot<
+  TData = Awaited<ReturnType<typeof getGoldSnapshot>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGoldSnapshot>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGoldSnapshotQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List messages in a conversation

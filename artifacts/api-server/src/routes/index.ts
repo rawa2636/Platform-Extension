@@ -7,6 +7,7 @@ import routeRouter from "./router";
 import statsRouter from "./stats";
 import traderRouter from "./trader";
 import geminiRouter from "./gemini";
+import goldRouter from "./gold";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(routeRouter);
 router.use(statsRouter);
 router.use(traderRouter);
 router.use(geminiRouter);
+router.use(goldRouter);
 
 export default router;

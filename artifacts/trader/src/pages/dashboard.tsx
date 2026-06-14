@@ -1,4 +1,5 @@
 import { useGetTraderDashboard, getGetTraderDashboardQueryKey } from "@workspace/api-client-react";
+import { GoldPriceTicker, OrderBookCard, GoldSummaryCard, TickTape } from "@/components/gold-market";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, formatPercent, formatPrice, formatTimeAbsolute, formatUnits } from "@/lib/format";
 import { PnlDisplay, DirectionBadge, StatusBadge } from "@/components/ui-patterns";
@@ -223,6 +224,21 @@ export default function Dashboard() {
       initial="hidden"
       animate="show"
     >
+      {/* ── Live Gold Market Strip ─────────────────────────────────────────── */}
+      <motion.div variants={itemVariants}>
+        <Card className="border-primary/30 bg-card/80">
+          <CardContent className="py-3 px-4">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <GoldPriceTicker />
+                <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">XAU/USD</span>
+              </div>
+              <TickTape />
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
       {snapshot?.sourceStatus !== "LIVE" && (
         <motion.div variants={itemVariants} className="bg-destructive/20 border border-destructive text-destructive px-4 py-3 rounded-md flex items-center gap-3">
           <AlertTriangle className="h-5 w-5" />
@@ -310,6 +326,12 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
+      </motion.div>
+
+      {/* ── Order Book + Market Summary ──────────────────────────────────── */}
+      <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <OrderBookCard />
+        <GoldSummaryCard />
       </motion.div>
 
       {/* ── Consensus Engine Live Panel ──────────────────────────────────── */}

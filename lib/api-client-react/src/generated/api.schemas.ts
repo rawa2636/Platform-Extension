@@ -591,7 +591,7 @@ export type TraderDashboardEquityCurveItem = {
 export interface TraderDashboard {
   account: TraderAccount;
   settings: TraderSettings;
-  snapshot?: TraderSnapshot;
+  snapshot?: TraderSnapshot | null;
   openPositions: TraderPosition[];
   recentSignals: TraderSignal[];
   lastCycleAt?: string | null;
@@ -636,6 +636,74 @@ export interface GeminiConversationWithMessages {
 
 export interface GeminiError {
   error: string;
+}
+
+export interface GoldTick {
+  bid: number;
+  ask: number;
+  mid: number;
+  ts: number;
+  size?: number | null;
+  side?: string | null;
+}
+
+export interface GoldPrice {
+  bid: number;
+  ask: number;
+  mid: number;
+  spread: number;
+  ts: number;
+}
+
+export interface GoldOrderBookLevel {
+  price: number;
+  size: number;
+}
+
+export interface GoldOrderBook {
+  bids: GoldOrderBookLevel[];
+  asks: GoldOrderBookLevel[];
+  updatedAt: number | null;
+}
+
+export interface GoldSummary {
+  dominantFlow: string;
+  liquidityState: string;
+  institutionalScore: number;
+  session: string;
+  updatedAt: number;
+}
+
+export interface GoldOrderFlow {
+  delta: number;
+  cumulativeDelta: number;
+  absorption: number;
+  exhaustion: number;
+  updatedAt: number;
+}
+
+export interface GoldLiquidityZone {
+  priceLevel: number;
+  zoneType: string;
+  strength: number;
+  description: string;
+}
+
+export interface GoldStatus {
+  connected: boolean;
+  lastTickAt: number | null;
+  stale: boolean;
+}
+
+export interface GoldSnapshot {
+  connected: boolean;
+  lastTickAt: number | null;
+  latestTick: GoldTick | null;
+  recentTicks: GoldTick[];
+  orderBook: GoldOrderBook | null;
+  summary: GoldSummary | null;
+  orderFlow: GoldOrderFlow | null;
+  liquidityZones: GoldLiquidityZone[];
 }
 
 export type ListModelsParams = {
@@ -755,3 +823,7 @@ export const ListTraderPositionsStatus = {
   CLOSED: "CLOSED",
   ALL: "ALL",
 } as const;
+
+export type GetGoldTicksParams = {
+  limit?: number;
+};

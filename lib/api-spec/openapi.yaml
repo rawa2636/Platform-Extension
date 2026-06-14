@@ -659,6 +659,111 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GeminiError"
+  /gold/price:
+    get:
+      operationId: getGoldPrice
+      tags: [gold]
+      summary: Latest bid/ask/mid/spread from gold platform
+      responses:
+        "200":
+          description: Current price
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldPrice"
+  /gold/ticks:
+    get:
+      operationId: getGoldTicks
+      tags: [gold]
+      summary: Recent tick buffer
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Array of recent ticks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GoldTick"
+  /gold/orderbook:
+    get:
+      operationId: getGoldOrderBook
+      tags: [gold]
+      summary: Current order book depth
+      responses:
+        "200":
+          description: Order book bids and asks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldOrderBook"
+  /gold/summary:
+    get:
+      operationId: getGoldSummary
+      tags: [gold]
+      summary: dominantFlow, liquidityState, institutionalScore
+      responses:
+        "200":
+          description: Market summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldSummary"
+  /gold/orderflow:
+    get:
+      operationId: getGoldOrderFlow
+      tags: [gold]
+      summary: Delta, cumulativeDelta, absorption, exhaustion
+      responses:
+        "200":
+          description: Order flow metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldOrderFlow"
+  /gold/liquidity/zones:
+    get:
+      operationId: getGoldLiquidityZones
+      tags: [gold]
+      summary: Stop clusters, liquidity pools, trap zones
+      responses:
+        "200":
+          description: Liquidity zones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GoldLiquidityZone"
+  /gold/status:
+    get:
+      operationId: getGoldStatus
+      tags: [gold]
+      summary: Platform connection status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldStatus"
+  /gold/snapshot:
+    get:
+      operationId: getGoldSnapshot
+      tags: [gold]
+      summary: Full snapshot — all gold data at once
+      responses:
+        "200":
+          description: Complete gold platform snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldSnapshot"
   /gemini/conversations/{id}/messages:
     get:
       operationId: listGeminiMessages
@@ -1584,7 +1689,9 @@ components:
         settings:
           $ref: "#/components/schemas/TraderSettings"
         snapshot:
-          $ref: "#/components/schemas/TraderSnapshot"
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TraderSnapshot"
         openPositions:
           type: array
           items:
@@ -1711,3 +1818,181 @@ components:
           type: string
       required:
         - error
+    GoldTick:
+      type: object
+      properties:
+        bid:
+          type: number
+        ask:
+          type: number
+        mid:
+          type: number
+        ts:
+          type: number
+        size:
+          type: number
+          nullable: true
+        side:
+          type: string
+          nullable: true
+      required:
+        - bid
+        - ask
+        - mid
+        - ts
+    GoldPrice:
+      type: object
+      properties:
+        bid:
+          type: number
+        ask:
+          type: number
+        mid:
+          type: number
+        spread:
+          type: number
+        ts:
+          type: number
+      required:
+        - bid
+        - ask
+        - mid
+        - spread
+        - ts
+    GoldOrderBookLevel:
+      type: object
+      properties:
+        price:
+          type: number
+        size:
+          type: number
+      required:
+        - price
+        - size
+    GoldOrderBook:
+      type: object
+      properties:
+        bids:
+          type: array
+          items:
+            $ref: "#/components/schemas/GoldOrderBookLevel"
+        asks:
+          type: array
+          items:
+            $ref: "#/components/schemas/GoldOrderBookLevel"
+        updatedAt:
+          type: number
+          nullable: true
+      required:
+        - bids
+        - asks
+        - updatedAt
+    GoldSummary:
+      type: object
+      properties:
+        dominantFlow:
+          type: string
+        liquidityState:
+          type: string
+        institutionalScore:
+          type: number
+        session:
+          type: string
+        updatedAt:
+          type: number
+      required:
+        - dominantFlow
+        - liquidityState
+        - institutionalScore
+        - session
+        - updatedAt
+    GoldOrderFlow:
+      type: object
+      properties:
+        delta:
+          type: number
+        cumulativeDelta:
+          type: number
+        absorption:
+          type: number
+        exhaustion:
+          type: number
+        updatedAt:
+          type: number
+      required:
+        - delta
+        - cumulativeDelta
+        - absorption
+        - exhaustion
+        - updatedAt
+    GoldLiquidityZone:
+      type: object
+      properties:
+        priceLevel:
+          type: number
+        zoneType:
+          type: string
+        strength:
+          type: number
+        description:
+          type: string
+      required:
+        - priceLevel
+        - zoneType
+        - strength
+        - description
+    GoldStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        lastTickAt:
+          type: number
+          nullable: true
+        stale:
+          type: boolean
+      required:
+        - connected
+        - lastTickAt
+        - stale
+    GoldSnapshot:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        lastTickAt:
+          type: number
+          nullable: true
+        latestTick:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/GoldTick"
+        recentTicks:
+          type: array
+          items:
+            $ref: "#/components/schemas/GoldTick"
+        orderBook:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/GoldOrderBook"
+        summary:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/GoldSummary"
+        orderFlow:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/GoldOrderFlow"
+        liquidityZones:
+          type: array
+          items:
+            $ref: "#/components/schemas/GoldLiquidityZone"
+      required:
+        - connected
+        - lastTickAt
+        - latestTick
+        - recentTicks
+        - orderBook
+        - summary
+        - orderFlow
+        - liquidityZones

@@ -1116,7 +1116,7 @@ export const GetTraderDashboardResponse = zod.object({
       newsHighImpactCount: zod.number(),
       drivers: zod.array(zod.string()),
     })
-    .optional(),
+    .nullish(),
   openPositions: zod.array(
     zod.object({
       id: zod.string(),
@@ -1229,6 +1229,168 @@ export const GetGeminiConversationResponse = zod.object({
  */
 export const DeleteGeminiConversationParams = zod.object({
   id: zod.coerce.number(),
+});
+
+/**
+ * @summary Latest bid/ask/mid/spread from gold platform
+ */
+export const GetGoldPriceResponse = zod.object({
+  bid: zod.number(),
+  ask: zod.number(),
+  mid: zod.number(),
+  spread: zod.number(),
+  ts: zod.number(),
+});
+
+/**
+ * @summary Recent tick buffer
+ */
+export const GetGoldTicksQueryParams = zod.object({
+  limit: zod.coerce.number().optional(),
+});
+
+export const GetGoldTicksResponseItem = zod.object({
+  bid: zod.number(),
+  ask: zod.number(),
+  mid: zod.number(),
+  ts: zod.number(),
+  size: zod.number().nullish(),
+  side: zod.string().nullish(),
+});
+export const GetGoldTicksResponse = zod.array(GetGoldTicksResponseItem);
+
+/**
+ * @summary Current order book depth
+ */
+export const GetGoldOrderBookResponse = zod.object({
+  bids: zod.array(
+    zod.object({
+      price: zod.number(),
+      size: zod.number(),
+    }),
+  ),
+  asks: zod.array(
+    zod.object({
+      price: zod.number(),
+      size: zod.number(),
+    }),
+  ),
+  updatedAt: zod.number().nullable(),
+});
+
+/**
+ * @summary dominantFlow, liquidityState, institutionalScore
+ */
+export const GetGoldSummaryResponse = zod.object({
+  dominantFlow: zod.string(),
+  liquidityState: zod.string(),
+  institutionalScore: zod.number(),
+  session: zod.string(),
+  updatedAt: zod.number(),
+});
+
+/**
+ * @summary Delta, cumulativeDelta, absorption, exhaustion
+ */
+export const GetGoldOrderFlowResponse = zod.object({
+  delta: zod.number(),
+  cumulativeDelta: zod.number(),
+  absorption: zod.number(),
+  exhaustion: zod.number(),
+  updatedAt: zod.number(),
+});
+
+/**
+ * @summary Stop clusters, liquidity pools, trap zones
+ */
+export const GetGoldLiquidityZonesResponseItem = zod.object({
+  priceLevel: zod.number(),
+  zoneType: zod.string(),
+  strength: zod.number(),
+  description: zod.string(),
+});
+export const GetGoldLiquidityZonesResponse = zod.array(
+  GetGoldLiquidityZonesResponseItem,
+);
+
+/**
+ * @summary Platform connection status
+ */
+export const GetGoldStatusResponse = zod.object({
+  connected: zod.boolean(),
+  lastTickAt: zod.number().nullable(),
+  stale: zod.boolean(),
+});
+
+/**
+ * @summary Full snapshot — all gold data at once
+ */
+export const GetGoldSnapshotResponse = zod.object({
+  connected: zod.boolean(),
+  lastTickAt: zod.number().nullable(),
+  latestTick: zod
+    .object({
+      bid: zod.number(),
+      ask: zod.number(),
+      mid: zod.number(),
+      ts: zod.number(),
+      size: zod.number().nullish(),
+      side: zod.string().nullish(),
+    })
+    .nullable(),
+  recentTicks: zod.array(
+    zod.object({
+      bid: zod.number(),
+      ask: zod.number(),
+      mid: zod.number(),
+      ts: zod.number(),
+      size: zod.number().nullish(),
+      side: zod.string().nullish(),
+    }),
+  ),
+  orderBook: zod
+    .object({
+      bids: zod.array(
+        zod.object({
+          price: zod.number(),
+          size: zod.number(),
+        }),
+      ),
+      asks: zod.array(
+        zod.object({
+          price: zod.number(),
+          size: zod.number(),
+        }),
+      ),
+      updatedAt: zod.number().nullable(),
+    })
+    .nullable(),
+  summary: zod
+    .object({
+      dominantFlow: zod.string(),
+      liquidityState: zod.string(),
+      institutionalScore: zod.number(),
+      session: zod.string(),
+      updatedAt: zod.number(),
+    })
+    .nullable(),
+  orderFlow: zod
+    .object({
+      delta: zod.number(),
+      cumulativeDelta: zod.number(),
+      absorption: zod.number(),
+      exhaustion: zod.number(),
+      updatedAt: zod.number(),
+    })
+    .nullable(),
+  liquidityZones: zod.array(
+    zod.object({
+      priceLevel: zod.number(),
+      zoneType: zod.string(),
+      strength: zod.number(),
+      description: zod.string(),
+    }),
+  ),
 });
 
 /**
