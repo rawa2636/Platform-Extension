@@ -2,28 +2,17 @@ import { randomUUID } from "node:crypto";
 import { db, traderSnapshotsTable } from "@workspace/db";
 import { logger } from "../logger.js";
 import {
-  SOURCE_BASE_URL,
   type NormalizedSnapshot,
   type SignalDirection,
 } from "./types.js";
+import { getGoldState } from "./gold-platform.js";
 
-const FETCH_TIMEOUT_MS = 25_000;
+const GOLD_BASE = process.env.GOLD_PLATFORM_URL ?? "https://gold-platform--mohamadrawa.replit.app/api";
+const FETCH_TIMEOUT_MS = 12_000;
 
-async function fetchWithTimeout(
-  url: string,
-  timeoutMs: number,
-): Promise<unknown> {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) {
-      throw new Error(`source ${url} -> HTTP ${res.status}`);
-    }
-    return await res.json();
-  } finally {
-    clearTimeout(t);
-  }
+export interface FetchSnapshotResult {
+  snapshot: NormalizedSnapshot;
+  snapshotId: string;
 }
 
 function asNumber(v: unknown, fallback: number | null = null): number | null {
@@ -35,83 +24,128 @@ function asString(v: unknown, fallback: string | null = null): string | null {
   return typeof v === "string" ? v : fallback;
 }
 
-export interface FetchSnapshotResult {
-  snapshot: NormalizedSnapshot;
-  snapshotId: string;
+async function fetchJson<T>(path: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<T | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${GOLD_BASE}${path}`, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
+// ── ATR from 1-minute candles ────────────────────────────────────────────────
+async function fetchAtr(spot: number): Promise<{ atrAbs: number | null; atrPct: number | null }> {
+  type Candle = { open: number; high: number; low: number; close: number };
+  const candles = await fetchJson<Candle[]>("/gold/candles?timeframe=1m&limit=20");
+  if (!Array.isArray(candles) || candles.length < 2) return { atrAbs: null, atrPct: null };
+  const trs = candles.map((c, i) => {
+    const prevClose = i === 0 ? c.open : (candles[i - 1]?.close ?? c.open);
+    return Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose));
+  });
+  const atrAbs = trs.reduce((a, b) => a + b, 0) / trs.length;
+  return { atrAbs, atrPct: atrAbs / spot };
+}
+
+type ContextData = {
+  dxy?: { value?: number };
+  us10yYield?: { value?: number };
+  session?: string;
+};
+
+type InstitutionalData = {
+  overallConfidence?: number;
+  marketPhase?: string;
+  largeAbsorptionDetected?: boolean;
+  hiddenAccumulation?: boolean;
+  hiddenDistribution?: boolean;
+  repeatedDefenseZone?: number;
+  events?: Array<{ eventType?: string; description?: string; priceLevel?: number; confidence?: number }>;
+};
+
+// ── Main snapshot ─────────────────────────────────────────────────────────────
 export async function fetchAndPersistSnapshot(): Promise<FetchSnapshotResult> {
-  const url = `${SOURCE_BASE_URL.replace(/\/$/, "")}/intelligence`;
-  const raw = (await fetchWithTimeout(url, FETCH_TIMEOUT_MS)) as Record<
-    string,
-    unknown
-  >;
+  // Real-time data from in-memory gold platform state (10Hz SSE + 2s pollers)
+  const goldState = getGoldState();
+  const { latestTick, summary, orderFlow } = goldState;
 
-  const market = (raw.market as Record<string, unknown> | undefined) ?? {};
-  const signal = (raw.signal as Record<string, unknown> | undefined) ?? {};
-  const timing = (raw.timing as Record<string, unknown> | undefined) ?? {};
-  const macro = (raw.macro as Record<string, unknown> | undefined) ?? {};
-  const cot = (raw.cot as Record<string, unknown> | undefined) ?? {};
-  const newsArr = Array.isArray(raw.news) ? (raw.news as unknown[]) : [];
-
-  const spot = asNumber(market.xauusd) ?? asNumber(signal.price);
+  const spot = latestTick?.mid ?? latestTick?.bid ?? null;
   if (spot === null) {
-    throw new Error("source returned no usable spot price");
+    throw new Error("gold platform has no tick data yet — ensure the stream is connected");
   }
 
-  const atrPct = asNumber(market.atr_pct);
-  const atrAbs = atrPct !== null ? spot * atrPct : null;
+  // Fetch slower-moving data in parallel
+  const [atr, ctx, inst] = await Promise.all([
+    fetchAtr(spot),
+    fetchJson<ContextData>("/gold/context"),
+    fetchJson<InstitutionalData>("/gold/institutional"),
+  ]);
 
-  const dirRaw = asString(signal.direction, "NEUTRAL")?.toUpperCase() ?? "NEUTRAL";
-  const direction: SignalDirection =
-    dirRaw === "BUY" || dirRaw === "SELL" ? dirRaw : "NEUTRAL";
+  // ── Direction ─────────────────────────────────────────────────────────────
+  const dominantFlow = (summary?.dominantFlow ?? "neutral").toLowerCase();
+  let direction: SignalDirection = "NEUTRAL";
+  if (dominantFlow === "buyers" || dominantFlow === "buy") direction = "BUY";
+  else if (dominantFlow === "sellers" || dominantFlow === "sell") direction = "SELL";
 
-  const tps = Array.isArray(signal.take_profit)
-    ? (signal.take_profit as unknown[])
-        .map((x) => asNumber(x))
-        .filter((x): x is number => x !== null)
-    : [];
+  // Confirm with cumulative delta when neutral
+  if (direction === "NEUTRAL" && orderFlow) {
+    if (orderFlow.cumulativeDelta > 80) direction = "BUY";
+    else if (orderFlow.cumulativeDelta < -80) direction = "SELL";
+  }
 
-  const drivers = Array.isArray(signal.drivers)
-    ? (signal.drivers as unknown[]).filter(
-        (x): x is string => typeof x === "string",
-      )
-    : [];
+  // ── Confidence ───────────────────────────────────────────────────────────
+  const instScore  = asNumber(summary?.institutionalScore, 0.5) ?? 0.5;
+  const instOverall = asNumber(inst?.overallConfidence, 0.5) ?? 0.5;
+  const confidence = Math.min(instScore * 0.6 + instOverall * 0.4, 1.0);
 
-  const newsHighImpact = newsArr.filter((n) => {
-    if (typeof n !== "object" || n === null) return false;
-    const rec = n as Record<string, unknown>;
-    return rec.impact === "high";
-  }).length;
+  // ── Drivers ───────────────────────────────────────────────────────────────
+  const drivers: string[] = [];
+  if (inst?.largeAbsorptionDetected) drivers.push("large_absorption_detected");
+  if (inst?.hiddenAccumulation) drivers.push("hidden_accumulation");
+  if (inst?.hiddenDistribution) drivers.push("hidden_distribution");
+  if (inst?.marketPhase) drivers.push(`market_phase:${inst.marketPhase}`);
+  if (inst?.repeatedDefenseZone) drivers.push(`defense_zone:${inst.repeatedDefenseZone}`);
+  (inst?.events ?? []).slice(0, 3).forEach((e) => {
+    if (e.eventType) drivers.push(e.eventType);
+  });
+  if (summary?.liquidityState) drivers.push(`liquidity:${summary.liquidityState}`);
 
+  // ── Macro ─────────────────────────────────────────────────────────────────
   const macroSummary: Record<string, unknown> = {
-    yield_10y: macro.yield_10y ?? null,
-    vix: macro.vix ?? null,
-    dxy: macro.dxy_yahoo ?? null,
-    gold_ohlc: macro.gold_ohlc ?? null,
+    dxy: asNumber(ctx?.dxy?.value),
+    yield_10y: asNumber(ctx?.us10yYield?.value),
+    vix: null,
+    session: asString(ctx?.session ?? summary?.session, "unknown"),
   };
+
+  const timingState = asString(ctx?.session ?? summary?.session, "unknown");
+  const timingPressure = asNumber(orderFlow?.absorption);
 
   const snapshot: NormalizedSnapshot = {
     fetchedAt: new Date().toISOString(),
-    sourceStatus: asString(market.status, "unknown") ?? "unknown",
+    sourceStatus: "LIVE",
     symbol: "XAUUSD",
     spot,
-    atrPct,
-    atrAbs,
+    atrPct: atr.atrPct,
+    atrAbs: atr.atrAbs,
     signalDirection: direction,
-    signalConfidence: asNumber(signal.confidence, 0) ?? 0,
-    signalScore: asNumber(signal.score, 0) ?? 0,
-    signalEntry: asNumber(signal.entry),
-    signalStopLoss: asNumber(signal.stop_loss),
-    signalTakeProfits: tps,
-    signalRiskReward: asNumber(signal.risk_reward),
-    timingState: asString(timing.state),
-    timingPressure: asNumber(timing.pressure),
+    signalConfidence: confidence,
+    signalScore: confidence,
+    signalEntry: null,       // computed by executor via quant-math
+    signalStopLoss: null,
+    signalTakeProfits: [],
+    signalRiskReward: null,
+    timingState,
+    timingPressure,
     macroSummary,
-    cotTilt: asString(cot.speculator_tilt),
-    newsHighImpactCount: newsHighImpact,
+    cotTilt: null,
+    newsHighImpactCount: 0,
     drivers,
-    rawPayload: raw,
+    rawPayload: { tick: latestTick, summary, orderFlow, context: ctx, institutional: inst },
   };
 
   const id = randomUUID();
@@ -123,26 +157,19 @@ export async function fetchAndPersistSnapshot(): Promise<FetchSnapshotResult> {
     payload: snapshot as unknown as Record<string, unknown>,
   });
 
-  logger.info(
-    {
-      spot: snapshot.spot,
-      direction,
-      confidence: snapshot.signalConfidence,
-    },
-    "trader.snapshot.fetched",
-  );
-
+  logger.info({ spot, direction, confidence: confidence.toFixed(3) }, "trader.snapshot.fetched");
   return { snapshot, snapshotId: id };
 }
 
+// Used by executor to price open positions without a full snapshot cycle
 export async function getCurrentSpotPrice(): Promise<number> {
-  const url = `${SOURCE_BASE_URL.replace(/\/$/, "")}/intelligence`;
-  const raw = (await fetchWithTimeout(url, FETCH_TIMEOUT_MS)) as Record<
-    string,
-    unknown
-  >;
-  const market = (raw.market as Record<string, unknown> | undefined) ?? {};
-  const spot = asNumber(market.xauusd);
-  if (spot === null) throw new Error("source returned no spot price");
+  const { latestTick } = getGoldState();
+  const mid = latestTick?.mid ?? latestTick?.bid ?? null;
+  if (mid !== null) return mid;
+
+  // Fallback: direct REST if stream hasn't warmed up yet
+  const data = await fetchJson<{ mid?: number; bid?: number }>("/gold/price");
+  const spot = asNumber(data?.mid ?? data?.bid);
+  if (spot === null) throw new Error("gold platform returned no spot price");
   return spot;
 }
