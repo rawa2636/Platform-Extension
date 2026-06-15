@@ -140,14 +140,24 @@ function detectTraps(
   spot: number,
 ): TrapSignals {
   // ── 1. Liquidity sweep risk ───────────────────────────────────────────────
-  // Round numbers attract stop orders. Price within 0.3 ATR of a round = sweep risk
-  const rounds = roundNumberLevels(spot, 200);
+  // Primary: use SmartMoneyRadar data if injected into snapshot (much more accurate)
+  const smr = s.smRadar;
   let liquiditySweepRisk = 0;
-  for (const r of rounds.slice(0, 6)) {
-    const dist = Math.abs(r.price - spot);
-    if (dist < atr * 0.15) liquiditySweepRisk = Math.max(liquiditySweepRisk, 0.65);
-    else if (dist < atr * 0.30) liquiditySweepRisk = Math.max(liquiditySweepRisk, 0.40);
-    else if (dist < atr * 0.50) liquiditySweepRisk = Math.max(liquiditySweepRisk, 0.20);
+
+  if (smr) {
+    // Radar already computed sweep probability from multi-layer algorithms
+    // Translate directly: sweepProbability → liquiditySweepRisk
+    liquiditySweepRisk = smr.sweepProbability * 0.85 + smr.fuelScore * 0.15;
+    liquiditySweepRisk = Math.min(liquiditySweepRisk, 0.95);
+  } else {
+    // Fallback: round-number proximity heuristic (less accurate)
+    const rounds = roundNumberLevels(spot, 200);
+    for (const r of rounds.slice(0, 6)) {
+      const dist = Math.abs(r.price - spot);
+      if (dist < atr * 0.15) liquiditySweepRisk = Math.max(liquiditySweepRisk, 0.65);
+      else if (dist < atr * 0.30) liquiditySweepRisk = Math.max(liquiditySweepRisk, 0.40);
+      else if (dist < atr * 0.50) liquiditySweepRisk = Math.max(liquiditySweepRisk, 0.20);
+    }
   }
 
   // ── 2. False breakout risk ────────────────────────────────────────────────

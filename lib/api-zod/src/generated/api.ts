@@ -1323,7 +1323,7 @@ export const GetGoldStatusResponse = zod.object({
 });
 
 /**
- * @summary Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+ * @summary Smart Money Radar — herd stop cluster map, sweep zones, institutional equilibrium
  */
 export const GetTraderSweepQueryParams = zod.object({
   direction: zod
@@ -1336,55 +1336,131 @@ export const GetTraderSweepQueryParams = zod.object({
 
 export const GetTraderSweepResponse = zod
   .object({
+    herdClustersBelow: zod
+      .array(
+        zod
+          .object({
+            price: zod
+              .number()
+              .describe("Price level where retail stops cluster"),
+            label: zod
+              .string()
+              .describe("Level identifier (Fib_0.618, S1, Psych_4350, etc.)"),
+            density: zod.number().describe("0–1 stop density at this level"),
+            distance: zod.number().describe("$ distance from current spot"),
+            side: zod
+              .enum(["above", "below"])
+              .describe("Side relative to spot"),
+            fuelScore: zod
+              .number()
+              .describe("0–1 smart money fuel score (density × proximity)"),
+          })
+          .describe(
+            'Retail stop-loss cluster — the \"fuel\" smart money targets for sweeping',
+          ),
+      )
+      .describe("Retail LONG stops below spot (swept on BUY setups)"),
+    herdClustersAbove: zod
+      .array(
+        zod
+          .object({
+            price: zod
+              .number()
+              .describe("Price level where retail stops cluster"),
+            label: zod
+              .string()
+              .describe("Level identifier (Fib_0.618, S1, Psych_4350, etc.)"),
+            density: zod.number().describe("0–1 stop density at this level"),
+            distance: zod.number().describe("$ distance from current spot"),
+            side: zod
+              .enum(["above", "below"])
+              .describe("Side relative to spot"),
+            fuelScore: zod
+              .number()
+              .describe("0–1 smart money fuel score (density × proximity)"),
+          })
+          .describe(
+            'Retail stop-loss cluster — the \"fuel\" smart money targets for sweeping',
+          ),
+      )
+      .describe("Retail SHORT stops above spot (swept on SELL setups)"),
+    primarySweepTarget: zod
+      .object({
+        price: zod.number().describe("Price level where retail stops cluster"),
+        label: zod
+          .string()
+          .describe("Level identifier (Fib_0.618, S1, Psych_4350, etc.)"),
+        density: zod.number().describe("0–1 stop density at this level"),
+        distance: zod.number().describe("$ distance from current spot"),
+        side: zod.enum(["above", "below"]).describe("Side relative to spot"),
+        fuelScore: zod
+          .number()
+          .describe("0–1 smart money fuel score (density × proximity)"),
+      })
+      .describe(
+        'Retail stop-loss cluster — the \"fuel\" smart money targets for sweeping',
+      )
+      .nullish()
+      .describe("Hottest herd cluster — most likely next sweep target"),
+    sweepDirection: zod
+      .enum(["DOWN_FIRST", "UP_FIRST", "UNCLEAR"])
+      .describe("Smart money sweep direction before the real move"),
     sweepProbability: zod
       .number()
-      .describe("0–1 probability of a liquidity sweep before the real move"),
+      .describe("0–1 probability of a sweep before the real move"),
     expectedSweepDepthLow: zod
       .number()
-      .describe("Lower bound of expected sweep depth in USD"),
+      .describe("Low estimate of sweep depth ($)"),
     expectedSweepDepthHigh: zod
       .number()
-      .describe("Upper bound of expected sweep depth in USD"),
-    trapZone: zod.object({
-      active: zod.boolean(),
-      low: zod.number().nullish(),
-      high: zod.number().nullish(),
-      nearestLevel: zod.string().nullish(),
-    }),
+      .describe("High estimate of sweep depth ($)"),
+    fuelScore: zod
+      .number()
+      .describe(
+        "0–1 aggregate smart money fuel from herd clusters on sweep side",
+      ),
     entryAllowed: zod
       .boolean()
-      .describe(
-        "false when sweepProbability > 70% or sweepDepth exceeds SL distance",
-      ),
-    recommendedEntry: zod
-      .number()
-      .describe("Price-adjusted entry after expected sweep (Dynamic Entry)"),
-    nearestPool: zod
+      .describe("false when sweepProbability > 68% or depth threatens SL"),
+    recommendedEntry: zod.number().describe("Post-sweep dynamic entry price"),
+    blockReason: zod
+      .string()
+      .nullish()
+      .describe("Arabic reason string when entry is blocked"),
+    sweepZone: zod
       .object({
-        price: zod.number(),
-        distance: zod.number(),
-        pullStrength: zod.number(),
+        low: zod.number(),
+        high: zod.number(),
         label: zod.string(),
-        side: zod.enum(["above", "below"]),
       })
       .nullish(),
-    allPools: zod.array(
-      zod.object({
-        price: zod.number(),
-        distance: zod.number(),
-        pullStrength: zod.number(),
-        label: zod.string(),
-        side: zod.enum(["above", "below"]),
-      }),
-    ),
+    institutionalEquilibrium: zod
+      .object({
+        price: zod
+          .number()
+          .describe("Equilibrium price (institutional fair value)"),
+        label: zod
+          .string()
+          .describe("Level label (R1, Fib_0.0, Psych_4400, etc.)"),
+        direction: zod.enum(["above", "below"]).describe("Direction from spot"),
+        distanceFromSpot: zod.number().describe("$ distance from current spot"),
+        confidence: zod
+          .number()
+          .describe("0–1 confidence in this as the equilibrium"),
+      })
+      .describe(
+        "Where smart money will unload after the sweep — the real TP target",
+      )
+      .nullish(),
     historicalAvgDepth: zod
       .number()
       .nullish()
       .describe("ML Memory: average actual sweep depth from past signals"),
-    blockReason: zod.string().nullish(),
     computedAt: zod.coerce.date(),
   })
-  .describe("Liquidity Trap Detector v2 — sweep analysis before any entry");
+  .describe(
+    "Smart Money Radar — herd stop clusters, sweep mechanics, institutional equilibrium",
+  );
 
 /**
  * @summary Full snapshot — all gold data at once

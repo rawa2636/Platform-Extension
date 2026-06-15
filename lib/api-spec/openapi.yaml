@@ -756,7 +756,7 @@ paths:
     get:
       operationId: getTraderSweep
       tags: [trader-cycle]
-      summary: Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+      summary: Smart Money Radar — herd stop cluster map, sweep zones, institutional equilibrium
       parameters:
         - name: direction
           in: query
@@ -771,7 +771,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SweepAssessment"
+                $ref: "#/components/schemas/SmartMoneyRadar"
         "400":
           description: No directional signal available
           content:
@@ -1845,72 +1845,101 @@ components:
       required:
         - error
 
-    LiquidityPool:
+    HerdStopCluster:
       type: object
+      description: Retail stop-loss cluster — the "fuel" smart money targets for sweeping
       properties:
-        price: { type: number }
-        distance: { type: number }
-        pullStrength: { type: number }
-        label: { type: string }
-        side: { type: string, enum: [above, below] }
-      required: [price, distance, pullStrength, label, side]
+        price:     { type: number, description: "Price level where retail stops cluster" }
+        label:     { type: string, description: "Level identifier (Fib_0.618, S1, Psych_4350, etc.)" }
+        density:   { type: number, description: "0–1 stop density at this level" }
+        distance:  { type: number, description: "$ distance from current spot" }
+        side:      { type: string, enum: [above, below], description: "Side relative to spot" }
+        fuelScore: { type: number, description: "0–1 smart money fuel score (density × proximity)" }
+      required: [price, label, density, distance, side, fuelScore]
 
-    TrapZone:
+    InstitutionalEquilibrium:
       type: object
+      description: Where smart money will unload after the sweep — the real TP target
       properties:
-        active: { type: boolean }
-        low: { type: number, nullable: true }
-        high: { type: number, nullable: true }
-        nearestLevel: { type: string, nullable: true }
-      required: [active]
+        price:            { type: number, description: "Equilibrium price (institutional fair value)" }
+        label:            { type: string, description: "Level label (R1, Fib_0.0, Psych_4400, etc.)" }
+        direction:        { type: string, enum: [above, below], description: "Direction from spot" }
+        distanceFromSpot: { type: number, description: "$ distance from current spot" }
+        confidence:       { type: number, description: "0–1 confidence in this as the equilibrium" }
+      required: [price, label, direction, distanceFromSpot, confidence]
 
-    SweepAssessment:
+    SmartMoneyRadar:
       type: object
-      description: Liquidity Trap Detector v2 — sweep analysis before any entry
+      description: Smart Money Radar — herd stop clusters, sweep mechanics, institutional equilibrium
       properties:
-        sweepProbability:
-          type: number
-          description: "0–1 probability of a liquidity sweep before the real move"
-        expectedSweepDepthLow:
-          type: number
-          description: "Lower bound of expected sweep depth in USD"
-        expectedSweepDepthHigh:
-          type: number
-          description: "Upper bound of expected sweep depth in USD"
-        trapZone:
-          $ref: "#/components/schemas/TrapZone"
-        entryAllowed:
-          type: boolean
-          description: "false when sweepProbability > 70% or sweepDepth exceeds SL distance"
-        recommendedEntry:
-          type: number
-          description: "Price-adjusted entry after expected sweep (Dynamic Entry)"
-        nearestPool:
+        herdClustersBelow:
+          type: array
+          items: { $ref: "#/components/schemas/HerdStopCluster" }
+          description: "Retail LONG stops below spot (swept on BUY setups)"
+        herdClustersAbove:
+          type: array
+          items: { $ref: "#/components/schemas/HerdStopCluster" }
+          description: "Retail SHORT stops above spot (swept on SELL setups)"
+        primarySweepTarget:
           nullable: true
           allOf:
-            - $ref: "#/components/schemas/LiquidityPool"
-        allPools:
-          type: array
-          items:
-            $ref: "#/components/schemas/LiquidityPool"
+            - $ref: "#/components/schemas/HerdStopCluster"
+          description: "Hottest herd cluster — most likely next sweep target"
+        sweepDirection:
+          type: string
+          enum: [DOWN_FIRST, UP_FIRST, UNCLEAR]
+          description: "Smart money sweep direction before the real move"
+        sweepProbability:
+          type: number
+          description: "0–1 probability of a sweep before the real move"
+        expectedSweepDepthLow:
+          type: number
+          description: "Low estimate of sweep depth ($)"
+        expectedSweepDepthHigh:
+          type: number
+          description: "High estimate of sweep depth ($)"
+        fuelScore:
+          type: number
+          description: "0–1 aggregate smart money fuel from herd clusters on sweep side"
+        entryAllowed:
+          type: boolean
+          description: "false when sweepProbability > 68% or depth threatens SL"
+        recommendedEntry:
+          type: number
+          description: "Post-sweep dynamic entry price"
+        blockReason:
+          type: string
+          nullable: true
+          description: "Arabic reason string when entry is blocked"
+        sweepZone:
+          nullable: true
+          type: object
+          properties:
+            low:   { type: number }
+            high:  { type: number }
+            label: { type: string }
+          required: [low, high, label]
+        institutionalEquilibrium:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/InstitutionalEquilibrium"
         historicalAvgDepth:
           type: number
           nullable: true
           description: "ML Memory: average actual sweep depth from past signals"
-        blockReason:
-          type: string
-          nullable: true
         computedAt:
           type: string
           format: date-time
       required:
+        - herdClustersBelow
+        - herdClustersAbove
+        - sweepDirection
         - sweepProbability
         - expectedSweepDepthLow
         - expectedSweepDepthHigh
-        - trapZone
+        - fuelScore
         - entryAllowed
         - recommendedEntry
-        - allPools
         - computedAt
     GoldTick:
       type: object

@@ -46,8 +46,8 @@ import {
   checkOpenPositionsForExit,
 } from "../lib/trader/positions.js";
 import {
-  assessLiquidityTrap,
-} from "../lib/trader/liquidity-trap.js";
+  assessSmartMoneyRadar,
+} from "../lib/trader/smart-money-radar.js";
 
 const router: IRouter = Router();
 
@@ -494,8 +494,9 @@ router.get("/trader/sweep", async (req, res) => {
       res.status(400).json({ error: "no directional signal available — pass ?direction=BUY|SELL" });
       return;
     }
-    const slDistance = Math.abs((snapshot.signalEntry ?? snapshot.spot) - (snapshot.signalStopLoss ?? (snapshot.spot - (snapshot.atrAbs ?? 12) * 0.25)));
-    const assessment = await assessLiquidityTrap(snapshot, direction, slDistance);
+    const atr = snapshot.atrAbs ?? 12;
+    const slDistance = Math.abs((snapshot.signalEntry ?? snapshot.spot) - (snapshot.signalStopLoss ?? (snapshot.spot - atr * 0.25)));
+    const assessment = await assessSmartMoneyRadar(snapshot, direction, slDistance);
     res.json(assessment);
   } catch (err) {
     req.log.error({ err: err instanceof Error ? err.message : String(err) }, "trader.sweep.error");

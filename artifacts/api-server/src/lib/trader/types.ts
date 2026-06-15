@@ -32,6 +32,52 @@ export const SOURCE_BASE_URL =
   process.env.GOLD_SOURCE_URL ??
   "https://source-bootstrap-11--mohamthana.replit.app";
 
+// Forward-declared type — filled by smart-money-radar.ts before consensus
+export interface SmartMoneyRadar {
+  // Herd stop clusters (retail stop positions — the "fuel")
+  herdClustersBelow: HerdStopCluster[];
+  herdClustersAbove: HerdStopCluster[];
+  primarySweepTarget: HerdStopCluster | null;
+
+  // Sweep mechanics
+  sweepDirection: "DOWN_FIRST" | "UP_FIRST" | "UNCLEAR";
+  sweepProbability: number;
+  expectedSweepDepthLow: number;
+  expectedSweepDepthHigh: number;
+  fuelScore: number;
+
+  // Post-sweep entry
+  entryAllowed: boolean;
+  recommendedEntry: number;
+  blockReason: string | null;
+  sweepZone: { low: number; high: number; label: string } | null;
+
+  // Institutional equilibrium (the real TP target — where smart money unloads)
+  institutionalEquilibrium: InstitutionalEquilibrium | null;
+
+  // ML Memory
+  historicalAvgDepth: number | null;
+
+  computedAt: string;
+}
+
+export interface HerdStopCluster {
+  price: number;
+  label: string;
+  density: number;
+  distance: number;
+  side: "above" | "below";
+  fuelScore: number;
+}
+
+export interface InstitutionalEquilibrium {
+  price: number;
+  label: string;
+  direction: "above" | "below";
+  distanceFromSpot: number;
+  confidence: number;
+}
+
 export interface NormalizedSnapshot {
   fetchedAt: string;
   sourceStatus: string;
@@ -53,6 +99,8 @@ export interface NormalizedSnapshot {
   newsHighImpactCount: number;
   drivers: string[];
   rawPayload: unknown;
+  // Injected by smart-money-radar BEFORE consensus runs
+  smRadar?: SmartMoneyRadar;
 }
 
 export interface GateDecision {

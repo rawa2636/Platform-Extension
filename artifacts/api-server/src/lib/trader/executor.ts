@@ -22,7 +22,7 @@ import {
 } from "./account.js";
 import type { GateDecision, AiVote } from "./types.js";
 import type { ConsensusVerdict, GuardedAgent } from "./agents/types.js";
-import { assessLiquidityTrap, persistSweepLog } from "./liquidity-trap.js";
+import { assessSmartMoneyRadar, persistSweepLog } from "./smart-money-radar.js";
 
 const SINGLETON = "singleton";
 
@@ -186,9 +186,19 @@ export async function runOneCycle(): Promise<CycleResult> {
       };
     }
 
-    // 7. ── MULTI-AGENT CONSENSUS ENGINE ──────────────────────────────────────
+    // 7. ── SMART MONEY RADAR — runs BEFORE consensus so all agents get smRadar ──
+    //    Detects herd stop clusters (fuel), sweep direction/depth, and the
+    //    institutional equilibrium (the real TP target). Injected into snapshot.
+    const direction7 = snapshot.signalDirection as "BUY" | "SELL";
+    const atr7 = snapshot.atrAbs ?? 12;
+    const slDist7 = atr7 * (settings.tradingMode === "DAILY" ? 1.8 : 1.3);
+    const radar = await assessSmartMoneyRadar(snapshot, direction7, slDist7);
+    snapshot.smRadar = radar;
+
+    // 8. ── MULTI-AGENT CONSENSUS ENGINE ──────────────────────────────────────
     //    Run all 6 agents (platform, orderflow, trap, macro, vision, LLM ensemble)
     //    through the anti-hallucination guard and strict consensus gate.
+    //    trap_engine now uses snapshot.smRadar for higher accuracy.
     const consensusResult = await runConsensus(snapshot);
 
     if (consensusResult.verdict === "BLOCK") {
@@ -211,7 +221,7 @@ export async function runOneCycle(): Promise<CycleResult> {
       };
     }
 
-    // 8. Risk rules (ATR, timing, COT, RR, daily cap, max positions, max trades, no dup)
+    // 9. Risk rules (ATR, timing, COT, RR, daily cap, max positions, max trades, no dup)
     const ruleEval = await evaluateRules(snapshot, settings, equity);
 
     if (!ruleEval.passed) {
@@ -226,7 +236,8 @@ export async function runOneCycle(): Promise<CycleResult> {
           { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
           { gate: "source_live", passed: true, reason: "data source live" },
           { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
-          { gate: "consensus_engine", passed: true, reason: `consensus ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}, agents=${consensusResult.deterministicAgreeCount}, llms=${consensusResult.llmAgreeCount}` },
+          { gate: "smart_money_radar", passed: true, reason: `radar: sweep_prob=${(radar.sweepProbability * 100).toFixed(0)}%, fuel=${(radar.fuelScore * 100).toFixed(0)}%` },
+          { gate: "consensus_engine", passed: true, reason: `ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}, agents=${consensusResult.deterministicAgreeCount}, llms=${consensusResult.llmAgreeCount}` },
           ...ruleEval.gates,
         ],
         consensus: consensusResult,
@@ -236,44 +247,78 @@ export async function runOneCycle(): Promise<CycleResult> {
     // Use consensus direction (most recent agreement)
     const direction = consensusResult.direction ?? ruleEval.direction!;
 
-    // 9. Liquidity Trap Detector v2 — assess sweep risk before sizing/entry
-    const slDistance = Math.abs(ruleEval.entry! - ruleEval.stopLoss!);
-    const sweepAssessment = await assessLiquidityTrap(snapshot, direction as "BUY" | "SELL", slDistance);
+    // 10. Smart Money Radar gate — uses radar already computed in step 7
+    //     Radar ran BEFORE consensus; we re-evaluate against final SL distance from rules.
+    const finalSlDist = Math.abs(ruleEval.entry! - ruleEval.stopLoss!);
+    // Re-run only if SL distance has changed significantly (>$0.50 difference)
+    const slChanged = Math.abs(finalSlDist - slDist7) > 0.50;
+    const finalRadar = slChanged
+      ? await assessSmartMoneyRadar(snapshot, direction as "BUY" | "SELL", finalSlDist)
+      : radar;
 
-    if (!sweepAssessment.entryAllowed) {
+    if (!finalRadar.entryAllowed) {
       logger.info(
-        { sweepProb: sweepAssessment.sweepProbability, blockReason: sweepAssessment.blockReason },
-        "trader.cycle.sweep_blocked",
+        { sweepProb: finalRadar.sweepProbability, fuel: finalRadar.fuelScore, blockReason: finalRadar.blockReason },
+        "trader.cycle.smradar_blocked",
       );
-      void persistSweepLog(snapshot, direction as "BUY" | "SELL", sweepAssessment);
+      void persistSweepLog(snapshot, direction as "BUY" | "SELL", finalRadar);
       await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
       return {
         ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
-        rejectionReason: `SWEEP BLOCK: ${sweepAssessment.blockReason}`,
+        rejectionReason: `RADAR BLOCK: ${finalRadar.blockReason}`,
         positionsClosed,
         gates: [
           { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
           { gate: "source_live", passed: true, reason: "data source live" },
           { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
+          { gate: "smart_money_radar", passed: false, reason: finalRadar.blockReason ?? "radar blocked", value: finalRadar.sweepProbability, threshold: 0.68 },
           { gate: "consensus_engine", passed: true, reason: `ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}` },
           ...ruleEval.gates,
-          {
-            gate: "liquidity_trap",
-            passed: false,
-            reason: sweepAssessment.blockReason ?? "sweep blocked",
-            value: sweepAssessment.sweepProbability,
-            threshold: 0.70,
-          },
         ],
         consensus: consensusResult,
       };
     }
 
-    // 10. Sizing
-    const sizing = computePositionSize(ruleEval.entry!, ruleEval.stopLoss!, settings, equity);
+    // 11. Override TP with Institutional Equilibrium (the real smart money target)
+    //     If the equilibrium is available and gives acceptable R:R, use it.
+    let finalEntry    = ruleEval.entry!;
+    let finalStopLoss = ruleEval.stopLoss!;
+    let finalTp       = ruleEval.takeProfit!;
+    let finalRr       = ruleEval.riskReward;
 
-    // Persist sweep assessment (allowed path — for ML Memory)
-    void persistSweepLog(snapshot, direction as "BUY" | "SELL", sweepAssessment);
+    const equil = finalRadar.institutionalEquilibrium;
+    if (equil) {
+      const tpCandidate = equil.price;
+      const tpDist      = Math.abs(tpCandidate - finalEntry);
+      const slDist      = Math.abs(finalEntry - finalStopLoss);
+      const candidateRr = slDist > 0 ? tpDist / slDist : 0;
+      // Use institutional equilibrium TP if:
+      //   - TP distance is at least $8 from entry (meaningful target)
+      //   - R:R meets minimum settings requirement
+      if (tpDist >= 8 && candidateRr >= settings.minRiskReward) {
+        finalTp = tpCandidate;
+        finalRr = Math.round(candidateRr * 100) / 100;
+        logger.info(
+          { equilLabel: equil.label, equilPrice: equil.price, rr: finalRr },
+          "trader.smradar.institutional_tp_override",
+        );
+      }
+    }
+
+    // If radar recommends a post-sweep entry, apply it (only if within $2 of rules entry)
+    const radarEntryDiff = Math.abs(finalRadar.recommendedEntry - finalEntry);
+    if (radarEntryDiff <= 2.0 && finalRadar.recommendedEntry !== finalEntry) {
+      finalEntry    = finalRadar.recommendedEntry;
+      finalStopLoss = direction === "BUY"
+        ? finalEntry - Math.abs(ruleEval.entry! - ruleEval.stopLoss!)
+        : finalEntry + Math.abs(ruleEval.entry! - ruleEval.stopLoss!);
+    }
+
+    // 12. Sizing
+    const sizing = computePositionSize(finalEntry, finalStopLoss, settings, equity);
+
+    // Persist radar to ML Memory log
+    void persistSweepLog(snapshot, direction as "BUY" | "SELL", finalRadar);
 
     // Serialize agents for audit trail storage
     const allGates: GateDecision[] = [
@@ -281,16 +326,16 @@ export async function runOneCycle(): Promise<CycleResult> {
       { gate: "source_live", passed: true, reason: "data source live" },
       { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
       {
+        gate: "smart_money_radar",
+        passed: true,
+        reason: `sweep=${(finalRadar.sweepProbability * 100).toFixed(0)}%, fuel=${(finalRadar.fuelScore * 100).toFixed(0)}%, equil=${equil ? `${equil.label}@${equil.price}` : "none"}, entry=${finalEntry}`,
+        value: finalRadar.sweepProbability,
+        threshold: 0.68,
+      },
+      {
         gate: "consensus_engine",
         passed: true,
         reason: `ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}, trap=${consensusResult.trapScore.toFixed(3)}, det=${consensusResult.deterministicAgreeCount}, llm=${consensusResult.llmAgreeCount}, complete=${consensusResult.dataCompleteness.toFixed(3)}`,
-      },
-      {
-        gate: "liquidity_trap",
-        passed: true,
-        reason: `sweep_prob=${(sweepAssessment.sweepProbability * 100).toFixed(0)}%, depth=${sweepAssessment.expectedSweepDepthLow}–${sweepAssessment.expectedSweepDepthHigh}$, recommended_entry=${sweepAssessment.recommendedEntry}`,
-        value: sweepAssessment.sweepProbability,
-        threshold: 0.70,
       },
       ...ruleEval.gates,
     ];
@@ -308,10 +353,10 @@ export async function runOneCycle(): Promise<CycleResult> {
       direction,
       confidence: consensusResult.globalConfidence,
       sourceScore: snapshot.signalScore,
-      entry: ruleEval.entry!,
-      stopLoss: ruleEval.stopLoss!,
-      takeProfit: ruleEval.takeProfit!,
-      riskReward: ruleEval.riskReward,
+      entry: finalEntry,
+      stopLoss: finalStopLoss,
+      takeProfit: finalTp,
+      riskReward: finalRr,
       atrAbs: ruleEval.atrAbs,
       sizeUnits: sizing.sizeUnits,
       riskAmount: sizing.riskAmount,
@@ -339,14 +384,14 @@ export async function runOneCycle(): Promise<CycleResult> {
       };
     }
 
-    // 10. Execute
+    // 13. Execute
     if (settings.executionMode === "AUTO") {
       const pos = await openPosition({
         signalId,
         side: direction as "BUY" | "SELL",
-        entry: ruleEval.entry!,
-        stopLoss: ruleEval.stopLoss!,
-        takeProfit: ruleEval.takeProfit!,
+        entry: finalEntry,
+        stopLoss: finalStopLoss,
+        takeProfit: finalTp,
         sizeUnits: sizing.sizeUnits,
         riskAmount: sizing.riskAmount,
       });

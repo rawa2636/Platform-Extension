@@ -638,49 +638,110 @@ export interface GeminiError {
   error: string;
 }
 
-export type LiquidityPoolSide =
-  (typeof LiquidityPoolSide)[keyof typeof LiquidityPoolSide];
+/**
+ * Side relative to spot
+ */
+export type HerdStopClusterSide =
+  (typeof HerdStopClusterSide)[keyof typeof HerdStopClusterSide];
 
-export const LiquidityPoolSide = {
+export const HerdStopClusterSide = {
   above: "above",
   below: "below",
 } as const;
 
-export interface LiquidityPool {
+/**
+ * Retail stop-loss cluster — the "fuel" smart money targets for sweeping
+ */
+export interface HerdStopCluster {
+  /** Price level where retail stops cluster */
   price: number;
-  distance: number;
-  pullStrength: number;
+  /** Level identifier (Fib_0.618, S1, Psych_4350, etc.) */
   label: string;
-  side: LiquidityPoolSide;
-}
-
-export interface TrapZone {
-  active: boolean;
-  low?: number | null;
-  high?: number | null;
-  nearestLevel?: string | null;
+  /** 0–1 stop density at this level */
+  density: number;
+  /** $ distance from current spot */
+  distance: number;
+  /** Side relative to spot */
+  side: HerdStopClusterSide;
+  /** 0–1 smart money fuel score (density × proximity) */
+  fuelScore: number;
 }
 
 /**
- * Liquidity Trap Detector v2 — sweep analysis before any entry
+ * Direction from spot
  */
-export interface SweepAssessment {
-  /** 0–1 probability of a liquidity sweep before the real move */
+export type InstitutionalEquilibriumDirection =
+  (typeof InstitutionalEquilibriumDirection)[keyof typeof InstitutionalEquilibriumDirection];
+
+export const InstitutionalEquilibriumDirection = {
+  above: "above",
+  below: "below",
+} as const;
+
+/**
+ * Where smart money will unload after the sweep — the real TP target
+ */
+export interface InstitutionalEquilibrium {
+  /** Equilibrium price (institutional fair value) */
+  price: number;
+  /** Level label (R1, Fib_0.0, Psych_4400, etc.) */
+  label: string;
+  /** Direction from spot */
+  direction: InstitutionalEquilibriumDirection;
+  /** $ distance from current spot */
+  distanceFromSpot: number;
+  /** 0–1 confidence in this as the equilibrium */
+  confidence: number;
+}
+
+/**
+ * Smart money sweep direction before the real move
+ */
+export type SmartMoneyRadarSweepDirection =
+  (typeof SmartMoneyRadarSweepDirection)[keyof typeof SmartMoneyRadarSweepDirection];
+
+export const SmartMoneyRadarSweepDirection = {
+  DOWN_FIRST: "DOWN_FIRST",
+  UP_FIRST: "UP_FIRST",
+  UNCLEAR: "UNCLEAR",
+} as const;
+
+export type SmartMoneyRadarSweepZone = {
+  low: number;
+  high: number;
+  label: string;
+} | null;
+
+/**
+ * Smart Money Radar — herd stop clusters, sweep mechanics, institutional equilibrium
+ */
+export interface SmartMoneyRadar {
+  /** Retail LONG stops below spot (swept on BUY setups) */
+  herdClustersBelow: HerdStopCluster[];
+  /** Retail SHORT stops above spot (swept on SELL setups) */
+  herdClustersAbove: HerdStopCluster[];
+  /** Hottest herd cluster — most likely next sweep target */
+  primarySweepTarget?: HerdStopCluster | null;
+  /** Smart money sweep direction before the real move */
+  sweepDirection: SmartMoneyRadarSweepDirection;
+  /** 0–1 probability of a sweep before the real move */
   sweepProbability: number;
-  /** Lower bound of expected sweep depth in USD */
+  /** Low estimate of sweep depth ($) */
   expectedSweepDepthLow: number;
-  /** Upper bound of expected sweep depth in USD */
+  /** High estimate of sweep depth ($) */
   expectedSweepDepthHigh: number;
-  trapZone: TrapZone;
-  /** false when sweepProbability > 70% or sweepDepth exceeds SL distance */
+  /** 0–1 aggregate smart money fuel from herd clusters on sweep side */
+  fuelScore: number;
+  /** false when sweepProbability > 68% or depth threatens SL */
   entryAllowed: boolean;
-  /** Price-adjusted entry after expected sweep (Dynamic Entry) */
+  /** Post-sweep dynamic entry price */
   recommendedEntry: number;
-  nearestPool?: LiquidityPool | null;
-  allPools: LiquidityPool[];
+  /** Arabic reason string when entry is blocked */
+  blockReason?: string | null;
+  sweepZone?: SmartMoneyRadarSweepZone;
+  institutionalEquilibrium?: InstitutionalEquilibrium | null;
   /** ML Memory: average actual sweep depth from past signals */
   historicalAvgDepth?: number | null;
-  blockReason?: string | null;
   computedAt: string;
 }
 

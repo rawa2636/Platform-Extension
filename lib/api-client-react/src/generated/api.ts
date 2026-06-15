@@ -55,8 +55,8 @@ import type {
   RouteRequest,
   RouteResponse,
   SendGeminiMessageBody,
+  SmartMoneyRadar,
   Stats,
-  SweepAssessment,
   TraderAccount,
   TraderDashboard,
   TraderPosition,
@@ -3113,7 +3113,7 @@ export function useGetGoldStatus<
 }
 
 /**
- * @summary Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+ * @summary Smart Money Radar — herd stop cluster map, sweep zones, institutional equilibrium
  */
 export const getGetTraderSweepUrl = (params?: GetTraderSweepParams) => {
   const normalizedParams = new URLSearchParams();
@@ -3134,8 +3134,8 @@ export const getGetTraderSweepUrl = (params?: GetTraderSweepParams) => {
 export const getTraderSweep = async (
   params?: GetTraderSweepParams,
   options?: RequestInit,
-): Promise<SweepAssessment> => {
-  return customFetch<SweepAssessment>(getGetTraderSweepUrl(params), {
+): Promise<SmartMoneyRadar> => {
+  return customFetch<SmartMoneyRadar>(getGetTraderSweepUrl(params), {
     ...options,
     method: "GET",
   });
@@ -3180,7 +3180,7 @@ export type GetTraderSweepQueryResult = NonNullable<
 export type GetTraderSweepQueryError = ErrorType<ErrorBody>;
 
 /**
- * @summary Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+ * @summary Smart Money Radar — herd stop cluster map, sweep zones, institutional equilibrium
  */
 
 export function useGetTraderSweep<
