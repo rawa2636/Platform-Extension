@@ -1,4 +1,4 @@
-import { useGetTraderDashboard, getGetTraderDashboardQueryKey } from "@workspace/api-client-react";
+import { useGetTraderDashboard, getGetTraderDashboardQueryKey, useGetTraderSweep } from "@workspace/api-client-react";
 import { GoldPriceTicker, OrderBookCard, GoldSummaryCard, TickTape } from "@/components/gold-market";
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from "recharts";
 import { formatMoney, formatPercent, formatPrice, formatTimeAbsolute, formatUnits } from "@/lib/format";
@@ -6,7 +6,7 @@ import { PnlDisplay, DirectionBadge, StatusBadge } from "@/components/ui-pattern
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { AlertCircle, ArrowUpRight, TrendingUp, AlertTriangle, Target, Cpu, Brain, Activity, Eye, ShieldCheck, CheckCircle2, XCircle, RefreshCw, PlayCircle, Plus, Trash2, Zap, Shield, Clock } from "lucide-react";
+import { AlertCircle, ArrowUpRight, TrendingUp, AlertTriangle, Target, Cpu, Brain, Activity, Eye, ShieldCheck, CheckCircle2, XCircle, RefreshCw, PlayCircle, Plus, Trash2, Zap, Shield, Clock, Droplets, BarChart2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { motion, type Variants } from "framer-motion";
@@ -66,6 +66,154 @@ function loadBookmapUrls(): string[] {
     const raw = localStorage.getItem(BOOKMAP_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as string[]) : [];
   } catch { return []; }
+}
+
+// ── Sweep Panel ────────────────────────────────────────────────────────────
+function SweepPanel() {
+  const { data: sweep, isLoading, refetch, isFetching } = useGetTraderSweep(
+    {},
+    { query: { refetchInterval: 30000, queryKey: ["trader-sweep"] } }
+  );
+
+  if (isLoading) {
+    return (
+      <Card className="border border-border">
+        <CardContent className="p-6">
+          <Skeleton className="h-6 w-48 mb-4" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!sweep) return null;
+
+  const probPct = Math.round(sweep.sweepProbability * 100);
+  const isHigh = sweep.sweepProbability > 0.70;
+  const isMid  = sweep.sweepProbability > 0.40 && !isHigh;
+
+  const probColor = isHigh ? "text-destructive" : isMid ? "text-yellow-400" : "text-emerald-400";
+  const borderColor = !sweep.entryAllowed
+    ? "border-destructive/60"
+    : sweep.trapZone.active
+      ? "border-yellow-500/40"
+      : "border-emerald-500/30";
+
+  return (
+    <Card className={`border-2 transition-colors duration-500 ${borderColor}`}>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Droplets className="h-5 w-5 text-primary" />
+            كاشف فخ السيولة — Liquidity Trap Detector v2
+          </div>
+          <div className="flex items-center gap-2">
+            {!sweep.entryAllowed && (
+              <Badge className="bg-destructive text-white text-xs px-2 py-0.5">
+                الدخول ممنوع
+              </Badge>
+            )}
+            {sweep.entryAllowed && (
+              <Badge className="bg-emerald-600 text-white text-xs px-2 py-0.5">
+                الدخول مسموح
+              </Badge>
+            )}
+            {sweep.trapZone.active && (
+              <Badge variant="outline" className="text-yellow-400 border-yellow-400/40 text-xs">
+                فخ سيولة نشط
+              </Badge>
+            )}
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => void refetch()} disabled={isFetching}>
+              <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} />
+              تحديث
+            </Button>
+          </div>
+        </CardTitle>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Block reason */}
+        {!sweep.entryAllowed && sweep.blockReason && (
+          <div className="flex items-start gap-2 bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>{sweep.blockReason}</span>
+          </div>
+        )}
+
+        {/* Main metrics grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Sweep Probability */}
+          <div className={`p-4 rounded-lg border text-center ${isHigh ? "border-destructive/40 bg-destructive/5" : isMid ? "border-yellow-500/30 bg-yellow-500/5" : "border-emerald-500/20 bg-emerald-500/5"}`}>
+            <BarChart2 className={`h-4 w-4 mx-auto mb-1 ${probColor}`} />
+            <div className={`text-2xl font-bold font-mono ${probColor}`}>{probPct}%</div>
+            <div className="text-xs text-muted-foreground mt-1">احتمال سحب السيولة</div>
+            <div className="text-[10px] font-mono mt-0.5 opacity-50">{isHigh ? "مرتفع" : isMid ? "متوسط" : "منخفض"}</div>
+          </div>
+
+          {/* Expected Sweep Depth */}
+          <div className="p-4 rounded-lg border border-border text-center">
+            <Droplets className="h-4 w-4 mx-auto mb-1 text-primary" />
+            <div className="text-2xl font-bold font-mono text-primary">
+              {sweep.expectedSweepDepthLow.toFixed(1)}–{sweep.expectedSweepDepthHigh.toFixed(1)}$
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">عمق السحب المتوقع</div>
+            {sweep.historicalAvgDepth != null && (
+              <div className="text-[10px] font-mono mt-0.5 opacity-50">متوسط تاريخي: {sweep.historicalAvgDepth.toFixed(1)}$</div>
+            )}
+          </div>
+
+          {/* Trap Zone */}
+          <div className={`p-4 rounded-lg border text-center ${sweep.trapZone.active ? "border-yellow-500/40 bg-yellow-500/5" : "border-border"}`}>
+            <ShieldCheck className={`h-4 w-4 mx-auto mb-1 ${sweep.trapZone.active ? "text-yellow-400" : "text-muted-foreground"}`} />
+            <div className={`text-lg font-bold font-mono ${sweep.trapZone.active ? "text-yellow-400" : "text-muted-foreground"}`}>
+              {sweep.trapZone.active ? "نشطة" : "هادئة"}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">منطقة التصفية</div>
+            {sweep.trapZone.active && sweep.trapZone.low != null && sweep.trapZone.high != null && (
+              <div className="text-[10px] font-mono mt-0.5 opacity-60 dir-ltr text-left mx-auto w-fit">
+                {sweep.trapZone.low.toFixed(2)} – {sweep.trapZone.high.toFixed(2)}
+              </div>
+            )}
+            {sweep.trapZone.nearestLevel && (
+              <div className="text-[10px] mt-0.5 opacity-50">{sweep.trapZone.nearestLevel}</div>
+            )}
+          </div>
+
+          {/* Recommended Entry */}
+          <div className="p-4 rounded-lg border border-primary/30 bg-primary/5 text-center">
+            <Target className="h-4 w-4 mx-auto mb-1 text-primary" />
+            <div className="text-2xl font-bold font-mono text-primary">
+              {sweep.recommendedEntry.toFixed(2)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">دخول ذكي (بعد السحب)</div>
+          </div>
+        </div>
+
+        {/* Liquidity Pools */}
+        {sweep.allPools.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs text-muted-foreground font-medium flex items-center gap-1.5">
+              <Droplets className="h-3 w-3" />
+              أقرب مناطق السيولة
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {sweep.allPools.slice(0, 4).map((pool, i) => (
+                <div key={i} className={`p-2 rounded border text-center text-xs ${pool.side === "below" ? "border-emerald-500/20 bg-emerald-500/5" : "border-destructive/20 bg-destructive/5"}`}>
+                  <div className="font-mono font-bold">{pool.price.toFixed(2)}</div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5 truncate">{pool.label}</div>
+                  <div className="text-[10px] mt-0.5 opacity-60">
+                    {pool.side === "below" ? "↓" : "↑"} {pool.distance.toFixed(2)}$ · قوة {(pool.pullStrength * 100).toFixed(0)}%
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -332,6 +480,11 @@ export default function Dashboard() {
       <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <OrderBookCard />
         <GoldSummaryCard />
+      </motion.div>
+
+      {/* ── Liquidity Trap Detector v2 ───────────────────────────────────── */}
+      <motion.div variants={itemVariants}>
+        <SweepPanel />
       </motion.div>
 
       {/* ── Consensus Engine Live Panel ──────────────────────────────────── */}

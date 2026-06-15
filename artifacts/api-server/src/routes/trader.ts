@@ -45,6 +45,9 @@ import {
   closePosition,
   checkOpenPositionsForExit,
 } from "../lib/trader/positions.js";
+import {
+  assessLiquidityTrap,
+} from "../lib/trader/liquidity-trap.js";
 
 const router: IRouter = Router();
 
@@ -475,6 +478,28 @@ router.post("/trader/ingest/frame", async (req, res) => {
       "trader.ingest.frame.failed",
     );
     res.status(400).json({ error: String(err) });
+  }
+});
+
+router.get("/trader/sweep", async (req, res) => {
+  try {
+    const { snapshot } = await fetchAndPersistSnapshot();
+    const queryDir = req.query["direction"] as string | undefined;
+    let direction: "BUY" | "SELL";
+    if (queryDir === "BUY" || queryDir === "SELL") {
+      direction = queryDir;
+    } else if (snapshot.signalDirection === "BUY" || snapshot.signalDirection === "SELL") {
+      direction = snapshot.signalDirection;
+    } else {
+      res.status(400).json({ error: "no directional signal available — pass ?direction=BUY|SELL" });
+      return;
+    }
+    const slDistance = Math.abs((snapshot.signalEntry ?? snapshot.spot) - (snapshot.signalStopLoss ?? (snapshot.spot - (snapshot.atrAbs ?? 12) * 0.25)));
+    const assessment = await assessLiquidityTrap(snapshot, direction, slDistance);
+    res.json(assessment);
+  } catch (err) {
+    req.log.error({ err: err instanceof Error ? err.message : String(err) }, "trader.sweep.error");
+    res.status(500).json({ error: String(err) });
   }
 });
 

@@ -22,6 +22,7 @@ import {
 } from "./account.js";
 import type { GateDecision, AiVote } from "./types.js";
 import type { ConsensusVerdict, GuardedAgent } from "./agents/types.js";
+import { assessLiquidityTrap, persistSweepLog } from "./liquidity-trap.js";
 
 const SINGLETON = "singleton";
 
@@ -235,8 +236,44 @@ export async function runOneCycle(): Promise<CycleResult> {
     // Use consensus direction (most recent agreement)
     const direction = consensusResult.direction ?? ruleEval.direction!;
 
-    // 9. Sizing
+    // 9. Liquidity Trap Detector v2 — assess sweep risk before sizing/entry
+    const slDistance = Math.abs(ruleEval.entry! - ruleEval.stopLoss!);
+    const sweepAssessment = await assessLiquidityTrap(snapshot, direction as "BUY" | "SELL", slDistance);
+
+    if (!sweepAssessment.entryAllowed) {
+      logger.info(
+        { sweepProb: sweepAssessment.sweepProbability, blockReason: sweepAssessment.blockReason },
+        "trader.cycle.sweep_blocked",
+      );
+      void persistSweepLog(snapshot, direction as "BUY" | "SELL", sweepAssessment);
+      await recordCycleTimes(settings.tradingMode === "DAILY" ? 300 : 180);
+      return {
+        ranAt, ok: true, signalCreated: false, signalId: null, signalStatus: null,
+        rejectionReason: `SWEEP BLOCK: ${sweepAssessment.blockReason}`,
+        positionsClosed,
+        gates: [
+          { gate: "execution_mode_on", passed: true, reason: `executionMode=${settings.executionMode}` },
+          { gate: "source_live", passed: true, reason: "data source live" },
+          { gate: "directional_signal", passed: true, reason: `direction=${snapshot.signalDirection}` },
+          { gate: "consensus_engine", passed: true, reason: `ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}` },
+          ...ruleEval.gates,
+          {
+            gate: "liquidity_trap",
+            passed: false,
+            reason: sweepAssessment.blockReason ?? "sweep blocked",
+            value: sweepAssessment.sweepProbability,
+            threshold: 0.70,
+          },
+        ],
+        consensus: consensusResult,
+      };
+    }
+
+    // 10. Sizing
     const sizing = computePositionSize(ruleEval.entry!, ruleEval.stopLoss!, settings, equity);
+
+    // Persist sweep assessment (allowed path — for ML Memory)
+    void persistSweepLog(snapshot, direction as "BUY" | "SELL", sweepAssessment);
 
     // Serialize agents for audit trail storage
     const allGates: GateDecision[] = [
@@ -247,6 +284,13 @@ export async function runOneCycle(): Promise<CycleResult> {
         gate: "consensus_engine",
         passed: true,
         reason: `ALLOW: conf=${consensusResult.globalConfidence.toFixed(3)}, trap=${consensusResult.trapScore.toFixed(3)}, det=${consensusResult.deterministicAgreeCount}, llm=${consensusResult.llmAgreeCount}, complete=${consensusResult.dataCompleteness.toFixed(3)}`,
+      },
+      {
+        gate: "liquidity_trap",
+        passed: true,
+        reason: `sweep_prob=${(sweepAssessment.sweepProbability * 100).toFixed(0)}%, depth=${sweepAssessment.expectedSweepDepthLow}–${sweepAssessment.expectedSweepDepthHigh}$, recommended_entry=${sweepAssessment.recommendedEntry}`,
+        value: sweepAssessment.sweepProbability,
+        threshold: 0.70,
       },
       ...ruleEval.gates,
     ];

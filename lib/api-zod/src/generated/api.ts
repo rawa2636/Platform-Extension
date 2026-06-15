@@ -1323,6 +1323,70 @@ export const GetGoldStatusResponse = zod.object({
 });
 
 /**
+ * @summary Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+ */
+export const GetTraderSweepQueryParams = zod.object({
+  direction: zod
+    .enum(["BUY", "SELL"])
+    .optional()
+    .describe(
+      "Signal direction to assess; defaults to current source signal direction",
+    ),
+});
+
+export const GetTraderSweepResponse = zod
+  .object({
+    sweepProbability: zod
+      .number()
+      .describe("0–1 probability of a liquidity sweep before the real move"),
+    expectedSweepDepthLow: zod
+      .number()
+      .describe("Lower bound of expected sweep depth in USD"),
+    expectedSweepDepthHigh: zod
+      .number()
+      .describe("Upper bound of expected sweep depth in USD"),
+    trapZone: zod.object({
+      active: zod.boolean(),
+      low: zod.number().nullish(),
+      high: zod.number().nullish(),
+      nearestLevel: zod.string().nullish(),
+    }),
+    entryAllowed: zod
+      .boolean()
+      .describe(
+        "false when sweepProbability > 70% or sweepDepth exceeds SL distance",
+      ),
+    recommendedEntry: zod
+      .number()
+      .describe("Price-adjusted entry after expected sweep (Dynamic Entry)"),
+    nearestPool: zod
+      .object({
+        price: zod.number(),
+        distance: zod.number(),
+        pullStrength: zod.number(),
+        label: zod.string(),
+        side: zod.enum(["above", "below"]),
+      })
+      .nullish(),
+    allPools: zod.array(
+      zod.object({
+        price: zod.number(),
+        distance: zod.number(),
+        pullStrength: zod.number(),
+        label: zod.string(),
+        side: zod.enum(["above", "below"]),
+      }),
+    ),
+    historicalAvgDepth: zod
+      .number()
+      .nullish()
+      .describe("ML Memory: average actual sweep depth from past signals"),
+    blockReason: zod.string().nullish(),
+    computedAt: zod.coerce.date(),
+  })
+  .describe("Liquidity Trap Detector v2 — sweep analysis before any entry");
+
+/**
  * @summary Full snapshot — all gold data at once
  */
 export const GetGoldSnapshotResponse = zod.object({

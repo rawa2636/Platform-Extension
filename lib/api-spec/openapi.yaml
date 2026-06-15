@@ -752,6 +752,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/GoldStatus"
+  /trader/sweep:
+    get:
+      operationId: getTraderSweep
+      tags: [trader-cycle]
+      summary: Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+      parameters:
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [BUY, SELL]
+          description: "Signal direction to assess; defaults to current source signal direction"
+      responses:
+        "200":
+          description: Sweep assessment result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SweepAssessment"
+        "400":
+          description: No directional signal available
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorBody"
   /gold/snapshot:
     get:
       operationId: getGoldSnapshot
@@ -1818,6 +1844,74 @@ components:
           type: string
       required:
         - error
+
+    LiquidityPool:
+      type: object
+      properties:
+        price: { type: number }
+        distance: { type: number }
+        pullStrength: { type: number }
+        label: { type: string }
+        side: { type: string, enum: [above, below] }
+      required: [price, distance, pullStrength, label, side]
+
+    TrapZone:
+      type: object
+      properties:
+        active: { type: boolean }
+        low: { type: number, nullable: true }
+        high: { type: number, nullable: true }
+        nearestLevel: { type: string, nullable: true }
+      required: [active]
+
+    SweepAssessment:
+      type: object
+      description: Liquidity Trap Detector v2 — sweep analysis before any entry
+      properties:
+        sweepProbability:
+          type: number
+          description: "0–1 probability of a liquidity sweep before the real move"
+        expectedSweepDepthLow:
+          type: number
+          description: "Lower bound of expected sweep depth in USD"
+        expectedSweepDepthHigh:
+          type: number
+          description: "Upper bound of expected sweep depth in USD"
+        trapZone:
+          $ref: "#/components/schemas/TrapZone"
+        entryAllowed:
+          type: boolean
+          description: "false when sweepProbability > 70% or sweepDepth exceeds SL distance"
+        recommendedEntry:
+          type: number
+          description: "Price-adjusted entry after expected sweep (Dynamic Entry)"
+        nearestPool:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LiquidityPool"
+        allPools:
+          type: array
+          items:
+            $ref: "#/components/schemas/LiquidityPool"
+        historicalAvgDepth:
+          type: number
+          nullable: true
+          description: "ML Memory: average actual sweep depth from past signals"
+        blockReason:
+          type: string
+          nullable: true
+        computedAt:
+          type: string
+          format: date-time
+      required:
+        - sweepProbability
+        - expectedSweepDepthLow
+        - expectedSweepDepthHigh
+        - trapZone
+        - entryAllowed
+        - recommendedEntry
+        - allPools
+        - computedAt
     GoldTick:
       type: object
       properties:

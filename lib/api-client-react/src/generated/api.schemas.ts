@@ -638,6 +638,52 @@ export interface GeminiError {
   error: string;
 }
 
+export type LiquidityPoolSide =
+  (typeof LiquidityPoolSide)[keyof typeof LiquidityPoolSide];
+
+export const LiquidityPoolSide = {
+  above: "above",
+  below: "below",
+} as const;
+
+export interface LiquidityPool {
+  price: number;
+  distance: number;
+  pullStrength: number;
+  label: string;
+  side: LiquidityPoolSide;
+}
+
+export interface TrapZone {
+  active: boolean;
+  low?: number | null;
+  high?: number | null;
+  nearestLevel?: string | null;
+}
+
+/**
+ * Liquidity Trap Detector v2 — sweep analysis before any entry
+ */
+export interface SweepAssessment {
+  /** 0–1 probability of a liquidity sweep before the real move */
+  sweepProbability: number;
+  /** Lower bound of expected sweep depth in USD */
+  expectedSweepDepthLow: number;
+  /** Upper bound of expected sweep depth in USD */
+  expectedSweepDepthHigh: number;
+  trapZone: TrapZone;
+  /** false when sweepProbability > 70% or sweepDepth exceeds SL distance */
+  entryAllowed: boolean;
+  /** Price-adjusted entry after expected sweep (Dynamic Entry) */
+  recommendedEntry: number;
+  nearestPool?: LiquidityPool | null;
+  allPools: LiquidityPool[];
+  /** ML Memory: average actual sweep depth from past signals */
+  historicalAvgDepth?: number | null;
+  blockReason?: string | null;
+  computedAt: string;
+}
+
 export interface GoldTick {
   bid: number;
   ask: number;
@@ -827,3 +873,18 @@ export const ListTraderPositionsStatus = {
 export type GetGoldTicksParams = {
   limit?: number;
 };
+
+export type GetTraderSweepParams = {
+  /**
+   * Signal direction to assess; defaults to current source signal direction
+   */
+  direction?: GetTraderSweepDirection;
+};
+
+export type GetTraderSweepDirection =
+  (typeof GetTraderSweepDirection)[keyof typeof GetTraderSweepDirection];
+
+export const GetTraderSweepDirection = {
+  BUY: "BUY",
+  SELL: "SELL",
+} as const;

@@ -29,6 +29,7 @@ import type {
   GeminiMessage,
   GetGoldTicksParams,
   GetTopModelsParams,
+  GetTraderSweepParams,
   GoldLiquidityZone,
   GoldOrderBook,
   GoldOrderFlow,
@@ -55,6 +56,7 @@ import type {
   RouteResponse,
   SendGeminiMessageBody,
   Stats,
+  SweepAssessment,
   TraderAccount,
   TraderDashboard,
   TraderPosition,
@@ -3102,6 +3104,100 @@ export function useGetGoldStatus<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetGoldStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+ */
+export const getGetTraderSweepUrl = (params?: GetTraderSweepParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/trader/sweep?${stringifiedParams}`
+    : `/api/trader/sweep`;
+};
+
+export const getTraderSweep = async (
+  params?: GetTraderSweepParams,
+  options?: RequestInit,
+): Promise<SweepAssessment> => {
+  return customFetch<SweepAssessment>(getGetTraderSweepUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTraderSweepQueryKey = (params?: GetTraderSweepParams) => {
+  return [`/api/trader/sweep`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetTraderSweepQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTraderSweep>>,
+  TError = ErrorType<ErrorBody>,
+>(
+  params?: GetTraderSweepParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTraderSweep>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTraderSweepQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTraderSweep>>> = ({
+    signal,
+  }) => getTraderSweep(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTraderSweep>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTraderSweepQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTraderSweep>>
+>;
+export type GetTraderSweepQueryError = ErrorType<ErrorBody>;
+
+/**
+ * @summary Liquidity Trap Detector v2 — dry-run sweep assessment for current market
+ */
+
+export function useGetTraderSweep<
+  TData = Awaited<ReturnType<typeof getTraderSweep>>,
+  TError = ErrorType<ErrorBody>,
+>(
+  params?: GetTraderSweepParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTraderSweep>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTraderSweepQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
